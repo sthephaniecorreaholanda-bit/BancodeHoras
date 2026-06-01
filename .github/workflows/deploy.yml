@@ -13,8 +13,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -25,9 +23,6 @@ jobs:
         run: npm ci
 
       - name: Build
-        env:
-          # For GitHub Pages hosting at https://<user>.github.io/<repo>/
-          BASE_PATH: /${{ github.event.repository.name }}/
         run: npm run build
 
       - name: Deploy to GitHub Pages
@@ -36,3 +31,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           publish_branch: gh-pages
+          cname: ""
