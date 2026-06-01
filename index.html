@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>Banco de Horas Pro</title>
+    <meta name="description" content="Banco de Horas Pro — controle pessoal de banco de horas, 100% no navegador." />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // SPA route restore — companion ao public/404.html
+      // (rafgraph/spa-github-pages, MIT). Restaura a rota original
+      // antes do React montar quando o GitHub Pages serve 404 → ?p=/rota.
+      (function () {
+        var l = window.location;
+        if (l.search.indexOf("p=") !== -1) {
+          var params = {};
+          l.search
+            .slice(1)
+            .split("&")
+            .forEach(function (kv) {
+              var i = kv.indexOf("=");
+              if (i > -1) params[kv.slice(0, i)] = kv.slice(i + 1);
+            });
+          if (params.p !== undefined) {
+            var newPath =
+              l.pathname.replace(/\/$/, "") +
+              params.p.replace(/~and~/g, "&") +
+              (params.q ? "?" + params.q.replace(/~and~/g, "&") : "") +
+              l.hash;
+            window.history.replaceState(null, "", newPath);
+          }
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/BancodeHoras/assets/index-BZE91UYk.js"></script>
+    <link rel="stylesheet" crossorigin href="/BancodeHoras/assets/index-BNs9ppwp.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
