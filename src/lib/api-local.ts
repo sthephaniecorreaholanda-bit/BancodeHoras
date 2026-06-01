@@ -5,6 +5,7 @@ import {
   type UseQueryOptions,
 } from "@tanstack/react-query";
 import { readKey, userKey, writeKey } from "./storage";
+import { supabase } from "./supabaseClient";
 import {
   bulkGenerateInputs,
   computeBalanceForRecord,
@@ -50,12 +51,52 @@ export const getExportRecordsQueryKey = () => ["records", "export"] as const;
 
 // ─── Storage helpers ──────────────────────────────────────────────────────
 
-function loadRecords(): TimeRecord[] {
-  return readKey<TimeRecord[]>(userKey("records"), []);
-}
+type DatabaseRecord = {
+  id: number;
+  date: string;
+  type?: string | null;
+  entry_time: string | null;
+  exit_time: string | null;
+  lunch_start: string | null;
+  lunch_end: string | null;
+  worked_minutes?: number | null;
+  balance_minutes?: number | null;
+  created_at: string;
+};
+const RECORDS_TABLE = "Horas";
 
-function saveRecords(rows: TimeRecord[]): void {
-  writeKey(userKey("records"), rows);
+async function loadRecords(): Promise<TimeRecord[]> {
+  const { data, error } = await supabase
+    .from<DatabaseRecord>(RECORDS_TABLE)
+    .select("id,date,type,entry_time,exit_time,lunch_start,lunch_end,worked_minutes,balance_minutes,created_at")
+    .order("date", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  if (!data) return [];
+
+  return data.map((row) => {
+    const settings = loadSettings();
+    const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
+      {
+        date: row.date,
+        type: (row.type as any) ?? "WORK_DAY",
+        entryTime: row.entry_time,
+        exitTime: row.exit_time,
+      },
+      settings,
+    );
+      return {
+        id: row.id,
+        date: row.date,
+        type: (row.type as any) ?? "WORK_DAY",
+        entryTime: row.entry_time,
+        exitTime: row.exit_time,
+        workedMinutes: row.worked_minutes ?? workedMinutes,
+        balanceMinutes: row.balance_minutes ?? balanceMinutes,
+        note: null,
+        createdAt: row.created_at,
+      };
+  });
 }
 
 type LegacySettings = Settings & { dailyTargetMinutes?: number };
@@ -79,10 +120,6 @@ function saveSettings(s: Settings): void {
   writeKey(userKey("settings"), s);
 }
 
-function nextId(rows: TimeRecord[]): number {
-  return rows.reduce((m, r) => (r.id > m ? r.id : m), 0) + 1;
-}
-
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["records"] });
   qc.invalidateQueries({ queryKey: ["summary"] });
@@ -95,7 +132,8 @@ export function useGetSummary() {
   return useQuery({
     queryKey: getGetSummaryQueryKey(),
     queryFn: async (): Promise<Summary> => {
-      return computeSummary(loadRecords(), loadSettings());
+      const records = await loadRecords();
+      return computeSummary(records, loadSettings());
     },
   });
 }
@@ -111,7 +149,8 @@ export function useListRecords(params?: { month?: number; year?: number }) {
   return useQuery({
     queryKey: getListRecordsQueryKey(params),
     queryFn: async (): Promise<TimeRecord[]> => {
-      return filterByMonth(loadRecords(), params?.month, params?.year);
+      const records = await loadRecords();
+      return filterByMonth(records, params?.month, params?.year);
     },
   });
 }
@@ -120,7 +159,8 @@ export function useGetMonthlyEvolution() {
   return useQuery({
     queryKey: getGetMonthlyEvolutionQueryKey(),
     queryFn: async (): Promise<MonthlyEvolution[]> => {
-      return computeMonthlyEvolution(loadRecords());
+      const records = await loadRecords();
+      return computeMonthlyEvolution(records);
     },
   });
 }
@@ -129,7 +169,8 @@ export function useGetMissingDays() {
   return useQuery({
     queryKey: getGetMissingDaysQueryKey(),
     queryFn: async (): Promise<MissingDay[]> => {
-      return computeMissingDays(loadRecords());
+      const records = await loadRecords();
+      return computeMissingDays(records);
     },
   });
 }
@@ -142,7 +183,8 @@ export function useExportRecords(opts?: ExportQueryOpts) {
   return useQuery<ExportData>({
     queryKey: getExportRecordsQueryKey(),
     queryFn: async (): Promise<ExportData> => {
-      const csv = recordsToCsv(loadRecords());
+      const records = await loadRecords();
+      const csv = recordsToCsv(records);
       return { csv, filename: defaultExportFilename() };
     },
     ...(opts?.query ?? {}),
@@ -155,26 +197,58 @@ export function useCreateRecord() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ data }: { data: TimeRecordInput }): Promise<TimeRecord> => {
-      const rows = loadRecords();
+      const rows = await loadRecords();
       if (rows.some((r) => r.date === data.date)) {
         throw new Error("Já existe um registro para esta data.");
       }
+
       const settings = loadSettings();
-      const { workedMinutes, balanceMinutes } = computeBalanceForRecord(data, settings);
-      const record: TimeRecord = {
-        id: nextId(rows),
-        date: data.date,
+      const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
+        {
+          date: data.date,
+          type: data.type,
+          entryTime: data.entryTime ?? null,
+          exitTime: data.exitTime ?? null,
+          note: data.note ?? null,
+        },
+        settings,
+      );
+
+      const createdAt = new Date().toISOString();
+
+      const { data: created, error } = await supabase
+        .from<DatabaseRecord>(RECORDS_TABLE)
+        .insert({
+          date: data.date,
+          type: data.type,
+          entry_time: data.entryTime ?? null,
+          exit_time: data.exitTime ?? null,
+          lunch_start: null,
+          lunch_end: null,
+          worked_minutes: workedMinutes,
+          balance_minutes: balanceMinutes,
+          created_at: createdAt,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        console.error("Supabase insert error (create record):", error);
+        throw new Error(error.message);
+      }
+      if (!created) throw new Error("Falha ao criar o registro.");
+
+      return {
+        id: created.id,
+        date: created.date,
         type: data.type,
-        entryTime: data.entryTime ?? null,
-        exitTime: data.exitTime ?? null,
+        entryTime: created.entry_time,
+        exitTime: created.exit_time,
         workedMinutes,
         balanceMinutes,
         note: data.note ?? null,
-        createdAt: new Date().toISOString(),
+        createdAt: created.created_at,
       };
-      rows.push(record);
-      saveRecords(rows);
-      return record;
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -190,10 +264,10 @@ export function useUpdateRecord() {
       id: number;
       data: TimeRecordUpdate;
     }): Promise<TimeRecord> => {
-      const rows = loadRecords();
+      const rows = await loadRecords();
       const idx = rows.findIndex((r) => r.id === id);
       if (idx === -1) throw new Error("Registro não encontrado.");
-      const settings = loadSettings();
+
       const merged: TimeRecord = {
         ...rows[idx],
         type: data.type ?? rows[idx].type,
@@ -201,6 +275,8 @@ export function useUpdateRecord() {
         exitTime: data.exitTime !== undefined ? data.exitTime : rows[idx].exitTime,
         note: data.note !== undefined ? data.note : rows[idx].note,
       };
+
+      const settings = loadSettings();
       const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
         {
           date: merged.date,
@@ -213,9 +289,34 @@ export function useUpdateRecord() {
       );
       merged.workedMinutes = workedMinutes;
       merged.balanceMinutes = balanceMinutes;
-      rows[idx] = merged;
-      saveRecords(rows);
-      return merged;
+
+      const { data: updated, error } = await supabase
+        .from<DatabaseRecord>(RECORDS_TABLE)
+        .update({
+          type: merged.type,
+          entry_time: merged.entryTime,
+          exit_time: merged.exitTime ?? null,
+          worked_minutes: merged.workedMinutes,
+          balance_minutes: merged.balanceMinutes,
+        })
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (error) throw new Error(error.message);
+      if (!updated) throw new Error("Falha ao atualizar o registro.");
+
+      return {
+        id: updated.id,
+        date: updated.date,
+        type: "WORK_DAY",
+        entryTime: updated.entry_time,
+        exitTime: updated.exit_time,
+        workedMinutes: merged.workedMinutes,
+        balanceMinutes: merged.balanceMinutes,
+        note: null,
+        createdAt: updated.created_at,
+      };
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -225,10 +326,12 @@ export function useDeleteRecord() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id }: { id: number }): Promise<void> => {
-      const rows = loadRecords();
-      const next = rows.filter((r) => r.id !== id);
-      if (next.length === rows.length) throw new Error("Registro não encontrado.");
-      saveRecords(next);
+      const { error } = await supabase
+        .from<DatabaseRecord>(RECORDS_TABLE)
+        .delete()
+        .eq("id", id);
+
+      if (error) throw new Error(error.message);
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -240,10 +343,15 @@ export function useDeleteRecordsBulk() {
     mutationFn: async ({ ids }: { ids: number[] }): Promise<{ deleted: number }> => {
       const unique = Array.from(new Set(ids)).filter((n) => Number.isFinite(n));
       if (unique.length === 0) return { deleted: 0 };
-      const rows = loadRecords();
-      const next = rows.filter((r) => !unique.includes(r.id));
-      saveRecords(next);
-      return { deleted: rows.length - next.length };
+
+      const { data: deletedRows, error } = await supabase
+        .from<DatabaseRecord>(RECORDS_TABLE)
+        .delete()
+        .in("id", unique)
+        .select("id");
+
+      if (error) throw new Error(error.message);
+      return { deleted: deletedRows?.length ?? 0 };
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -275,7 +383,7 @@ export function useBulkGenerateMonth() {
     }: {
       data: BulkGenerateBody;
     }): Promise<BulkGenerateResult> => {
-      const rows = loadRecords();
+      const rows = await loadRecords();
       const existing = new Set(rows.map((r) => r.date));
       const settings = loadSettings();
       const { toCreate, skipped } = bulkGenerateInputs(
@@ -285,22 +393,34 @@ export function useBulkGenerateMonth() {
         settings,
       );
 
-      let id = nextId(rows);
-      for (const input of toCreate) {
+      if (toCreate.length === 0) {
+        return { created: 0, skipped };
+      }
+
+      const createdAt = new Date().toISOString();
+      const recordsToInsert = toCreate.map((input) => {
         const { workedMinutes, balanceMinutes } = computeBalanceForRecord(input, settings);
-        rows.push({
-          id: id++,
+        return {
           date: input.date,
           type: input.type,
-          entryTime: input.entryTime ?? null,
-          exitTime: input.exitTime ?? null,
-          workedMinutes,
-          balanceMinutes,
-          note: input.note ?? null,
-          createdAt: new Date().toISOString(),
-        });
+          entry_time: input.entryTime ?? null,
+          exit_time: input.exitTime ?? null,
+          lunch_start: null,
+          lunch_end: null,
+          worked_minutes: workedMinutes,
+          balance_minutes: balanceMinutes,
+          created_at: createdAt,
+        };
+      });
+
+      const { error } = await supabase
+        .from<DatabaseRecord>(RECORDS_TABLE)
+        .insert(recordsToInsert);
+
+      if (error) {
+        console.error("Supabase insert error (bulk create records):", error);
+        throw new Error(error.message);
       }
-      saveRecords(rows);
       return { created: toCreate.length, skipped };
     },
     onSuccess: () => invalidateAll(qc),

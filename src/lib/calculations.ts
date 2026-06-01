@@ -59,9 +59,10 @@ export function computeBalanceForRecord(
       input.exitTime ?? null,
       settings.lunchBreakMinutes,
     );
+    // Folga compensada: por padrão não afeta o saldo do banco de horas
     return {
       workedMinutes: debit,
-      balanceMinutes: -debit,
+      balanceMinutes: 0,
     };
   }
   return { workedMinutes: 0, balanceMinutes: 0 };
