@@ -63,28 +63,59 @@ type DatabaseRecord = {
   balance_minutes?: number | null;
   created_at: string;
 };
+
 const RECORDS_TABLE = "Horas";
 
+// Local fallback storage key for records when Supabase is unavailable
+const LOCAL_RECORDS_KEY = userKey("records");
+const LOCAL_LAST_ID_KEY = userKey("lastRecordId");
+
+async function readLocalRecords(): Promise<TimeRecord[]> {
+  try {
+    return readKey<TimeRecord[]>(LOCAL_RECORDS_KEY, []);
+  } catch {
+    return [];
+  }
+}
+
+async function writeLocalRecords(records: TimeRecord[]): Promise<void> {
+  try {
+    writeKey(LOCAL_RECORDS_KEY, records);
+    const maxId = records.reduce((m, r) => Math.max(m, r.id), 0);
+    writeKey(LOCAL_LAST_ID_KEY, maxId);
+  } catch {
+    // ignore
+  }
+}
+
+function nextLocalId(records: TimeRecord[]): number {
+  const maxId = records.reduce((m, r) => Math.max(m, r.id), 0);
+  return maxId + 1;
+}
+
 async function loadRecords(): Promise<TimeRecord[]> {
-  const { data, error } = await supabase
-    .from<DatabaseRecord>(RECORDS_TABLE)
-    .select("id,date,type,entry_time,exit_time,lunch_start,lunch_end,worked_minutes,balance_minutes,created_at")
-    .order("date", { ascending: true });
+  try {
+    const { data, error } = await supabase
+      .from<DatabaseRecord>(RECORDS_TABLE)
+      .select(
+        "id,date,type,entry_time,exit_time,lunch_start,lunch_end,worked_minutes,balance_minutes,created_at",
+      )
+      .order("date", { ascending: true });
 
-  if (error) throw new Error(error.message);
-  if (!data) return [];
+    if (error) throw new Error(error.message);
+    if (!data) return [];
 
-  return data.map((row) => {
     const settings = loadSettings();
-    const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
-      {
-        date: row.date,
-        type: (row.type as any) ?? "WORK_DAY",
-        entryTime: row.entry_time,
-        exitTime: row.exit_time,
-      },
-      settings,
-    );
+    return data.map((row) => {
+      const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
+        {
+          date: row.date,
+          type: (row.type as any) ?? "WORK_DAY",
+          entryTime: row.entry_time,
+          exitTime: row.exit_time,
+        },
+        settings,
+      );
       return {
         id: row.id,
         date: row.date,
@@ -96,7 +127,13 @@ async function loadRecords(): Promise<TimeRecord[]> {
         note: null,
         createdAt: row.created_at,
       };
-  });
+    });
+  } catch (err) {
+    // Supabase failed — fallback to local storage
+    const local = await readLocalRecords();
+    if (local.length === 0) return [];
+    return local.sort((a, b) => a.date.localeCompare(b.date));
+  }
 }
 
 type LegacySettings = Settings & { dailyTargetMinutes?: number };
@@ -215,40 +252,56 @@ export function useCreateRecord() {
       );
 
       const createdAt = new Date().toISOString();
+      try {
+        const { data: created, error } = await supabase
+          .from<DatabaseRecord>(RECORDS_TABLE)
+          .insert({
+            date: data.date,
+            type: data.type,
+            entry_time: data.entryTime ?? null,
+            exit_time: data.exitTime ?? null,
+            lunch_start: null,
+            lunch_end: null,
+            worked_minutes: workedMinutes,
+            balance_minutes: balanceMinutes,
+            created_at: createdAt,
+          })
+          .select("*")
+          .single();
 
-      const { data: created, error } = await supabase
-        .from<DatabaseRecord>(RECORDS_TABLE)
-        .insert({
+        if (error) throw new Error(error.message);
+        if (!created) throw new Error("Falha ao criar o registro.");
+
+        return {
+          id: created.id,
+          date: created.date,
+          type: created.type as any,
+          entryTime: created.entry_time,
+          exitTime: created.exit_time,
+          workedMinutes,
+          balanceMinutes,
+          note: data.note ?? null,
+          createdAt: created.created_at,
+        };
+      } catch (err) {
+        // Supabase failed — fallback to local storage
+        const local = await readLocalRecords();
+        const id = nextLocalId(local);
+        const record: TimeRecord = {
+          id,
           date: data.date,
-          type: data.type,
-          entry_time: data.entryTime ?? null,
-          exit_time: data.exitTime ?? null,
-          lunch_start: null,
-          lunch_end: null,
-          worked_minutes: workedMinutes,
-          balance_minutes: balanceMinutes,
-          created_at: createdAt,
-        })
-        .select("*")
-        .single();
-
-      if (error) {
-        console.error("Supabase insert error (create record):", error);
-        throw new Error(error.message);
+          type: data.type as any,
+          entryTime: data.entryTime ?? null,
+          exitTime: data.exitTime ?? null,
+          workedMinutes,
+          balanceMinutes,
+          note: data.note ?? null,
+          createdAt,
+        };
+        local.push(record);
+        await writeLocalRecords(local);
+        return record;
       }
-      if (!created) throw new Error("Falha ao criar o registro.");
-
-      return {
-        id: created.id,
-        date: created.date,
-        type: data.type,
-        entryTime: created.entry_time,
-        exitTime: created.exit_time,
-        workedMinutes,
-        balanceMinutes,
-        note: data.note ?? null,
-        createdAt: created.created_at,
-      };
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -302,21 +355,38 @@ export function useUpdateRecord() {
         .eq("id", id)
         .select("*")
         .single();
+      try {
+        if (error) throw new Error(error.message);
+        if (!updated) throw new Error("Falha ao atualizar o registro.");
 
-      if (error) throw new Error(error.message);
-      if (!updated) throw new Error("Falha ao atualizar o registro.");
-
-      return {
-        id: updated.id,
-        date: updated.date,
-        type: "WORK_DAY",
-        entryTime: updated.entry_time,
-        exitTime: updated.exit_time,
-        workedMinutes: merged.workedMinutes,
-        balanceMinutes: merged.balanceMinutes,
-        note: null,
-        createdAt: updated.created_at,
-      };
+        return {
+          id: updated.id,
+          date: updated.date,
+          type: (updated.type as any) ?? "WORK_DAY",
+          entryTime: updated.entry_time,
+          exitTime: updated.exit_time,
+          workedMinutes: merged.workedMinutes,
+          balanceMinutes: merged.balanceMinutes,
+          note: null,
+          createdAt: updated.created_at,
+        };
+      } catch (err) {
+        // Supabase update failed — fallback to local storage
+        const local = await readLocalRecords();
+        const idx = local.findIndex((r) => r.id === id);
+        if (idx === -1) throw new Error("Registro não encontrado.");
+        local[idx] = {
+          ...local[idx],
+          type: merged.type,
+          entryTime: merged.entryTime,
+          exitTime: merged.exitTime ?? null,
+          workedMinutes: merged.workedMinutes,
+          balanceMinutes: merged.balanceMinutes,
+          note: merged.note ?? null,
+        };
+        await writeLocalRecords(local);
+        return local[idx];
+      }
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -330,7 +400,6 @@ export function useDeleteRecord() {
         .from<DatabaseRecord>(RECORDS_TABLE)
         .delete()
         .eq("id", id);
-
       if (error) throw new Error(error.message);
     },
     onSuccess: () => invalidateAll(qc),
@@ -349,9 +418,17 @@ export function useDeleteRecordsBulk() {
         .delete()
         .in("id", unique)
         .select("id");
-
-      if (error) throw new Error(error.message);
-      return { deleted: deletedRows?.length ?? 0 };
+      try {
+        if (error) throw new Error(error.message);
+        return { deleted: deletedRows?.length ?? 0 };
+      } catch (err) {
+        // Supabase delete failed — fallback to local storage
+        const local = await readLocalRecords();
+        const before = local.length;
+        const remaining = local.filter((r) => !unique.includes(r.id));
+        await writeLocalRecords(remaining);
+        return { deleted: Math.max(0, before - remaining.length) };
+      }
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -416,12 +493,32 @@ export function useBulkGenerateMonth() {
       const { error } = await supabase
         .from<DatabaseRecord>(RECORDS_TABLE)
         .insert(recordsToInsert);
-
-      if (error) {
-        console.error("Supabase insert error (bulk create records):", error);
-        throw new Error(error.message);
+      try {
+        if (error) throw new Error(error.message);
+        return { created: toCreate.length, skipped };
+      } catch (err) {
+        // Supabase bulk insert failed — fallback to local storage
+        const local = await readLocalRecords();
+        let id = nextLocalId(local);
+        const createdAt = new Date().toISOString();
+        const toInsertLocal = recordsToInsert.map((r) => {
+          const rec: TimeRecord = {
+            id: id++,
+            date: r.date,
+            type: r.type as any,
+            entryTime: r.entry_time,
+            exitTime: r.exit_time,
+            workedMinutes: r.worked_minutes ?? 0,
+            balanceMinutes: r.balance_minutes ?? 0,
+            note: null,
+            createdAt,
+          };
+          return rec;
+        });
+        const merged = [...local, ...toInsertLocal];
+        await writeLocalRecords(merged);
+        return { created: toCreate.length, skipped };
       }
-      return { created: toCreate.length, skipped };
     },
     onSuccess: () => invalidateAll(qc),
   });
