@@ -8,36 +8,50 @@ Tudo é salvo no `localStorage` do navegador — **não há backend**.
 - React 19 + Vite + TypeScript
 - TanStack Query + Wouter (rotas)
 - Tailwind CSS + Radix UI
-- Persistência: `localStorage` (separada por usuário)
+- Persistência: Supabase para registros de ponto
 - Auth: SHA-256 via `crypto.subtle` (até 2 usuários, fins de estudo)
 
 ## Rodar local
+
+Crie um arquivo `.env` na raiz com as chaves Supabase:
+
+```env
+VITE_SUPABASE_URL=https://aexrustxvswbmawlvjam.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_kEV27Zw8RMS3noFhgt8EDw_67YJZmNI
+```
 
 ```bash
 npm install
 npm run dev
 ```
 
-Abra `http://localhost:5173/Banco-de-horas/`.
+Abra `http://localhost:5173/BancodeHoras/`.
 
 ## Build de produção (GitHub Pages)
 
 ```bash
-BASE_PATH=/Banco-de-horas/ npm run build
+VITE_SUPABASE_URL=your_supabase_url \
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key \
+BASE_PATH=/BancodeHoras/ npm run build
 npm run preview
 ```
 
 O `BASE_PATH` deve corresponder ao subpath onde o site é servido.
+Para este repo, use `BASE_PATH=/BancodeHoras/`.
 Para domínio próprio ou `user.github.io`, use `BASE_PATH=/`.
 
 ## Deploy automático
 
 `.github/workflows/deploy.yml` builda e publica em **GitHub Pages**
-a cada push para `main`. Configure uma única vez em
+a cada push para `main` ou `master`. Configure uma única vez em
 **Settings → Pages → Source: GitHub Actions**.
 
-## Estrutura
+O fluxo já define o `BASE_PATH=/Banco-de-horas/` durante o build, então
+não é preciso passar essa variável manualmente no CI.
 
+Para usar Supabase no deploy, crie os segredos do GitHub:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 ```
 src/
   App.tsx              # login + roteamento

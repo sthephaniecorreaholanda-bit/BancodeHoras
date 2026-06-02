@@ -3,8 +3,10 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
+const BASE_PATH = process.env.BASE_PATH || "/BancodeHoras/";
+
 export default defineConfig({
-  base: '/BancodeHoras/',
+  base: BASE_PATH,
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
