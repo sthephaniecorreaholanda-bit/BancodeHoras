@@ -54,15 +54,17 @@ export function computeBalanceForRecord(
     };
   }
   if (input.type === "COMPENSATED_LEAVE") {
-    const debit = computeWorkedMinutes(
-      input.entryTime ?? null,
-      input.exitTime ?? null,
+    const effectiveEntry = input.entryTime ?? settings.defaultEntryTime;
+    const effectiveExit = input.exitTime ?? settings.defaultExitTime;
+    const deductedMinutes = computeWorkedMinutes(
+      effectiveEntry,
+      effectiveExit,
       settings.lunchBreakMinutes,
     );
-    // Folga compensada: por padrão não afeta o saldo do banco de horas
+    // Folga compensada deve debitar a jornada líquida do dia informado
     return {
-      workedMinutes: debit,
-      balanceMinutes: 0,
+      workedMinutes: 0,
+      balanceMinutes: -deductedMinutes,
     };
   }
   return { workedMinutes: 0, balanceMinutes: 0 };

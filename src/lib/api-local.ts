@@ -107,23 +107,29 @@ async function loadRecords(): Promise<TimeRecord[]> {
 
     const settings = loadSettings();
     return data.map((row) => {
+      const recType = (row.type as any) ?? "WORK_DAY";
       const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
         {
           date: row.date,
-          type: (row.type as any) ?? "WORK_DAY",
+          type: recType,
           entryTime: row.entry_time,
           exitTime: row.exit_time,
         },
         settings,
       );
+
+      // For COMPENSATED_LEAVE ensure we use the computed values (debit)
+      const finalWorked = recType === "COMPENSATED_LEAVE" ? workedMinutes : (row.worked_minutes ?? workedMinutes);
+      const finalBalance = recType === "COMPENSATED_LEAVE" ? balanceMinutes : (row.balance_minutes ?? balanceMinutes);
+
       return {
         id: row.id,
         date: row.date,
-        type: (row.type as any) ?? "WORK_DAY",
+        type: recType,
         entryTime: row.entry_time,
         exitTime: row.exit_time,
-        workedMinutes: row.worked_minutes ?? workedMinutes,
-        balanceMinutes: row.balance_minutes ?? balanceMinutes,
+        workedMinutes: finalWorked,
+        balanceMinutes: finalBalance,
         note: null,
         createdAt: row.created_at,
       };
