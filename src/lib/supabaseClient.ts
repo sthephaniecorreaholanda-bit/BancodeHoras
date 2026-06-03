@@ -29,10 +29,14 @@ const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabaseUrl = normalizeSupabaseUrl(rawUrl) || "https://aexrustxvswbmawlvjam.supabase.co";
 const supabaseKey = rawKey || "sb_publishable_kEV27Zw8RMS3noFhgt8EDw_67YJZmNI";
 
-if (!supabaseUrl || !/^https?:\/\/.+/.test(supabaseUrl)) {
-  // provide a clearer message but avoid crashing the whole app during build/runtime
-  // The original supabase client throws if URL is invalid; keep explicit check
-  throw new Error(`Invalid supabaseUrl: ${supabaseUrl}`);
+// Create client only when we have a valid URL; otherwise fall back to local-only mode.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _supabaseClient: any = null;
+if (!supabaseUrl || !/^https?:\/\//.test(supabaseUrl)) {
+  console.error(`Invalid supabaseUrl, falling back to local-only mode: ${supabaseUrl}`);
+  _supabaseClient = null;
+} else {
+  _supabaseClient = createClient(supabaseUrl, supabaseKey);
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = _supabaseClient;
