@@ -66,13 +66,26 @@ type DatabaseRecord = {
 
 const RECORDS_TABLE = "Horas";
 
-// Local fallback storage key for records when Supabase is unavailable
-const LOCAL_RECORDS_KEY = userKey("records");
-const LOCAL_LAST_ID_KEY = userKey("lastRecordId");
+// Helper to derive local storage keys without throwing when no user is logged
+function getLocalRecordsKey(): string {
+  try {
+    return userKey("records");
+  } catch {
+    return "bh:public:records";
+  }
+}
+
+function getLocalLastIdKey(): string {
+  try {
+    return userKey("lastRecordId");
+  } catch {
+    return "bh:public:lastRecordId";
+  }
+}
 
 async function readLocalRecords(): Promise<TimeRecord[]> {
   try {
-    return readKey<TimeRecord[]>(LOCAL_RECORDS_KEY, []);
+    return readKey<TimeRecord[]>(getLocalRecordsKey(), []);
   } catch {
     return [];
   }
@@ -80,9 +93,9 @@ async function readLocalRecords(): Promise<TimeRecord[]> {
 
 async function writeLocalRecords(records: TimeRecord[]): Promise<void> {
   try {
-    writeKey(LOCAL_RECORDS_KEY, records);
+    writeKey(getLocalRecordsKey(), records);
     const maxId = records.reduce((m, r) => Math.max(m, r.id), 0);
-    writeKey(LOCAL_LAST_ID_KEY, maxId);
+    writeKey(getLocalLastIdKey(), maxId);
   } catch {
     // ignore
   }
