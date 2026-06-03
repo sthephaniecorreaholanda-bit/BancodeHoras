@@ -177,9 +177,9 @@ function saveSettings(s: Settings): void {
 }
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: ["records"] });
-  qc.invalidateQueries({ queryKey: ["summary"] });
-  qc.invalidateQueries({ queryKey: ["settings"] });
+  qc.invalidateQueries({ queryKey: ["records"], exact: false });
+  qc.invalidateQueries({ queryKey: ["summary"], exact: false });
+  qc.invalidateQueries({ queryKey: ["settings"], exact: false });
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────
@@ -415,11 +415,17 @@ export function useDeleteRecord() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id }: { id: number }): Promise<void> => {
-      const { error } = await supabase
-        .from<DatabaseRecord>(RECORDS_TABLE)
-        .delete()
-        .eq("id", id);
-      if (error) throw new Error(error.message);
+      try {
+        const { error } = await supabase
+          .from<DatabaseRecord>(RECORDS_TABLE)
+          .delete()
+          .eq("id", id);
+        if (error) throw new Error(error.message);
+      } catch (err) {
+        const local = await readLocalRecords();
+        const remaining = local.filter((r) => r.id !== id);
+        await writeLocalRecords(remaining);
+      }
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -432,12 +438,12 @@ export function useDeleteRecordsBulk() {
       const unique = Array.from(new Set(ids)).filter((n) => Number.isFinite(n));
       if (unique.length === 0) return { deleted: 0 };
 
-      const { data: deletedRows, error } = await supabase
-        .from<DatabaseRecord>(RECORDS_TABLE)
-        .delete()
-        .in("id", unique)
-        .select("id");
       try {
+        const { data: deletedRows, error } = await supabase
+          .from<DatabaseRecord>(RECORDS_TABLE)
+          .delete()
+          .in("id", unique)
+          .select("id");
         if (error) throw new Error(error.message);
         return { deleted: deletedRows?.length ?? 0 };
       } catch (err) {
