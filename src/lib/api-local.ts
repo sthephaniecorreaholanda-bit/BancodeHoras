@@ -53,6 +53,7 @@ export const getExportRecordsQueryKey = () => ["records", "export"] as const;
 
 type DatabaseRecord = {
   id: number;
+  user_id?: string;
   date: string;
   type?: string | null;
   entry_time: string | null;
@@ -107,12 +108,19 @@ function nextLocalId(records: TimeRecord[]): number {
 }
 
 async function loadRecords(): Promise<TimeRecord[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
   try {
     const { data, error } = await supabase
       .from<DatabaseRecord>(RECORDS_TABLE)
       .select(
         "id,date,type,entry_time,exit_time,lunch_start,lunch_end,worked_minutes,balance_minutes,created_at",
       )
+      .eq("user_id", user.id)
       .order("date", { ascending: true });
 
     if (error) throw new Error(error.message);
@@ -272,19 +280,27 @@ export function useCreateRecord() {
 
       const createdAt = new Date().toISOString();
       try {
+        const {
+  data: { user },
+} = await supabase.auth.getUser();
+
+if (!user) {
+  throw new Error("Usuário não autenticado");
+}
         const { data: created, error } = await supabase
-          .from<DatabaseRecord>(RECORDS_TABLE)
-          .insert({
-            date: data.date,
-            type: data.type,
-            entry_time: data.entryTime ?? null,
-            exit_time: data.exitTime ?? null,
-            lunch_start: null,
-            lunch_end: null,
-            worked_minutes: workedMinutes,
-            balance_minutes: balanceMinutes,
-            created_at: createdAt,
-          })
+  .from<DatabaseRecord>(RECORDS_TABLE)
+  .insert({
+    user_id: user.id,
+    date: data.date,
+    type: data.type,
+    entry_time: data.entryTime ?? null,
+    exit_time: data.exitTime ?? null,
+    lunch_start: null,
+    lunch_end: null,
+    worked_minutes: workedMinutes,
+    balance_minutes: balanceMinutes,
+    created_at: createdAt,
+  })
           .select("*")
           .single();
 
