@@ -204,13 +204,34 @@ function TelaAuth() {
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{ width: "100%", padding: "12px", borderRadius: "6px", border: "none", backgroundColor: "#1e3a8a", color: "#ffffff", fontSize: "16px", fontWeight: 600, cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.7 : 1 }}
-          >
-            {submitting ? "..." : buttonLabels[view]}
-          </button>
+          {(() => {
+            const tooWeak = view === "register" && getPasswordStrength(password) < 3;
+            const isDisabled = submitting || tooWeak;
+            return (
+              <div style={{ position: "relative" }}>
+                <button
+                  type="submit"
+                  disabled={isDisabled}
+                  title={tooWeak ? "Crie uma senha mais forte antes de continuar" : undefined}
+                  style={{
+                    width: "100%", padding: "12px", borderRadius: "6px", border: "none",
+                    backgroundColor: tooWeak ? "#94a3b8" : "#1e3a8a",
+                    color: "#ffffff", fontSize: "16px", fontWeight: 600,
+                    cursor: submitting ? "wait" : tooWeak ? "not-allowed" : "pointer",
+                    opacity: submitting ? 0.7 : 1,
+                    transition: "background-color 0.2s ease",
+                  }}
+                >
+                  {submitting ? "..." : buttonLabels[view]}
+                </button>
+                {tooWeak && password.length > 0 && (
+                  <p style={{ margin: "8px 0 0 0", fontSize: "12px", color: "#94a3b8", textAlign: "center" }}>
+                    Senha precisa ser pelo menos <strong>Boa</strong> para continuar
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </form>
 
         <div style={{ marginTop: "20px", fontSize: "13px", color: "#64748b", display: "flex", flexDirection: "column", gap: "8px" }}>
