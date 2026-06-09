@@ -14,7 +14,7 @@ import Configuracoes from "@/pages/Configuracoes";
 import Anual from "@/pages/Anual";
 import NotFound from "@/pages/not-found";
 import { supabase } from "@/lib/supabaseClient";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, NO_REMEMBER_KEY, SESSION_ACTIVE_KEY } from "@/hooks/use-auth";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -99,6 +99,7 @@ function TelaAuth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [message, setMessage] = useState({ text: "", isError: false });
   const [submitting, setSubmitting] = useState(false);
 
@@ -120,6 +121,12 @@ function TelaAuth() {
       } else if (view === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        if (rememberMe) {
+          localStorage.removeItem(NO_REMEMBER_KEY);
+        } else {
+          localStorage.setItem(NO_REMEMBER_KEY, "1");
+        }
+        sessionStorage.setItem(SESSION_ACTIVE_KEY, "1");
       } else if (view === "forgot") {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/reset-password`,
@@ -211,6 +218,21 @@ function TelaAuth() {
                 </button>
               </div>
               {view === "register" && <PasswordStrengthBar password={password} />}
+            </div>
+          )}
+
+          {view === "login" && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "18px" }}>
+              <input
+                id="remember-me"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                style={{ width: "15px", height: "15px", accentColor: "#1e3a8a", cursor: "pointer", flexShrink: 0 }}
+              />
+              <label htmlFor="remember-me" style={{ fontSize: "13px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                Lembrar-me neste dispositivo
+              </label>
             </div>
           )}
 
