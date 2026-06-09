@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -10,10 +11,13 @@ import {
   ClipboardEdit,
   BarChart2,
   LogOut,
+  X,
+  MailWarning,
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/lib/supabaseClient";
 
 const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Painel de Resumo", exact: true },
@@ -23,6 +27,48 @@ const navItems = [
   { href: "/personalizacao", icon: Palette, label: "Personalização", exact: false },
   { href: "/configuracoes", icon: Settings, label: "Configurações", exact: false },
 ];
+
+function EmailConfirmationBanner({ email }: { email: string }) {
+  const [dismissed, setDismissed] = useState(false);
+  const [resent, setResent] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  if (dismissed) return null;
+
+  async function handleResend() {
+    setSending(true);
+    await supabase.auth.resend({ type: "signup", email });
+    setSending(false);
+    setResent(true);
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-sm">
+      <MailWarning size={16} className="flex-shrink-0" />
+      <span className="flex-1">
+        {resent
+          ? "E-mail de confirmação reenviado! Verifique sua caixa de entrada."
+          : "Confirme seu e-mail para garantir acesso contínuo à sua conta."}
+      </span>
+      {!resent && (
+        <button
+          onClick={handleResend}
+          disabled={sending}
+          className="flex-shrink-0 text-xs font-semibold underline underline-offset-2 hover:opacity-70 disabled:opacity-50 transition-opacity"
+        >
+          {sending ? "Enviando..." : "Reenviar e-mail"}
+        </button>
+      )}
+      <button
+        onClick={() => setDismissed(true)}
+        className="flex-shrink-0 hover:opacity-70 transition-opacity"
+        aria-label="Fechar aviso"
+      >
+        <X size={15} />
+      </button>
+    </div>
+  );
+}
 
 export function Layout({
   children,
@@ -35,6 +81,7 @@ export function Layout({
   const [location] = useLocation();
   const { user } = useAuth();
   const currentUser = user?.email ?? null;
+  const emailUnconfirmed = user && !user.email_confirmed_at;
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -112,8 +159,11 @@ export function Layout({
       </aside>
 
       {/* Main content — offset for sidebar */}
-      <main className="flex-1 ml-14 sm:ml-56 min-h-screen">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-6">{children}</div>
+      <main className="flex-1 ml-14 sm:ml-56 min-h-screen flex flex-col">
+        {emailUnconfirmed && user.email && (
+          <EmailConfirmationBanner email={user.email} />
+        )}
+        <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">{children}</div>
       </main>
     </div>
   );
