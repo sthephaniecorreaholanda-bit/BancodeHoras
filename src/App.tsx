@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -97,6 +98,7 @@ function TelaAuth() {
   const [view, setView] = useState<AuthView>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState({ text: "", isError: false });
   const [submitting, setSubmitting] = useState(false);
 
@@ -186,14 +188,28 @@ function TelaAuth() {
               <label style={{ display: "block", marginBottom: "5px", color: "#475569", fontSize: "14px", fontWeight: 600 }}>
                 Senha:
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="••••••••"
-                style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  style={{ width: "100%", padding: "10px", paddingRight: "40px", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  style={{
+                    position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer", padding: "2px",
+                    color: "#94a3b8", display: "flex", alignItems: "center",
+                  }}
+                >
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
               {view === "register" && <PasswordStrengthBar password={password} />}
             </div>
           )}
