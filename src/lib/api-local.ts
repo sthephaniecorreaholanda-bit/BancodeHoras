@@ -110,7 +110,7 @@ async function loadRecords(): Promise<TimeRecord[]> {
     if (!data) return [];
 
     const settings = loadSettings();
-    return data.map((row) => {
+    return data.map((row: DatabaseRecord) => {
       const recType = (row.type as any) ?? "WORK_DAY";
       const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
         {

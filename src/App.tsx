@@ -13,7 +13,7 @@ import Personalizacao from "@/pages/Personalizacao";
 import Configuracoes from "@/pages/Configuracoes";
 import Anual from "@/pages/Anual";
 import NotFound from "@/pages/not-found";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase, isSupabaseConfigured } from "@/lib/supabaseClient";
 import { useAuth, NO_REMEMBER_KEY, SESSION_ACTIVE_KEY } from "@/hooks/use-auth";
 
 const queryClient = new QueryClient({
@@ -321,10 +321,50 @@ function Router({ onLogout }: { onLogout: () => void }) {
   );
 }
 
+// ─── Setup screen ─────────────────────────────────────────────────────────
+
+function TelaConfiguracao() {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "center", alignItems: "center",
+      minHeight: "100vh", backgroundColor: "#0f172a", fontFamily: "sans-serif", padding: "20px", boxSizing: "border-box",
+    }}>
+      <div style={{
+        background: "#ffffff", padding: "40px", borderRadius: "12px",
+        width: "100%", maxWidth: "480px", boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+      }}>
+        <div style={{ fontSize: "36px", textAlign: "center", marginBottom: "12px" }}>⚙️</div>
+        <h2 style={{ margin: "0 0 8px 0", color: "#1e293b", fontSize: "20px", fontWeight: "bold", textAlign: "center" }}>
+          Configuração necessária
+        </h2>
+        <p style={{ margin: "0 0 24px 0", color: "#64748b", fontSize: "14px", textAlign: "center" }}>
+          As variáveis de ambiente do Supabase não estão configuradas.
+        </p>
+
+        <ol style={{ margin: "0 0 24px 0", padding: "0 0 0 20px", color: "#475569", fontSize: "14px", lineHeight: "2" }}>
+          <li>No painel do Replit, abra <strong>Secrets</strong></li>
+          <li>Adicione <code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: "4px" }}>VITE_SUPABASE_URL</code></li>
+          <li>Adicione <code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: "4px" }}>VITE_SUPABASE_ANON_KEY</code></li>
+          <li>Reinicie o servidor de desenvolvimento</li>
+        </ol>
+
+        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px", fontSize: "12px", color: "#64748b" }}>
+          Encontre ambos os valores em:<br />
+          <strong>Supabase → Project Settings → API</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────
 
 function App() {
   const { user, loading } = useAuth();
+
+  if (!isSupabaseConfigured) {
+    return <TelaConfiguracao />;
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut();
