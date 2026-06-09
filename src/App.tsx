@@ -21,6 +21,74 @@ const queryClient = new QueryClient({
   },
 });
 
+// ─── Password strength ────────────────────────────────────────────────────
+
+type StrengthLevel = 0 | 1 | 2 | 3 | 4;
+
+function getPasswordStrength(pwd: string): StrengthLevel {
+  if (pwd.length === 0) return 0;
+  let score = 0;
+  if (pwd.length >= 8) score++;
+  if (/[A-Z]/.test(pwd)) score++;
+  if (/[0-9]/.test(pwd)) score++;
+  if (/[^A-Za-z0-9]/.test(pwd)) score++;
+  return score as StrengthLevel;
+}
+
+const STRENGTH_LABELS: Record<StrengthLevel, string> = {
+  0: "",
+  1: "Fraca",
+  2: "Razoável",
+  3: "Boa",
+  4: "Forte",
+};
+
+const STRENGTH_COLORS: Record<StrengthLevel, string> = {
+  0: "#e2e8f0",
+  1: "#ef4444",
+  2: "#f97316",
+  3: "#eab308",
+  4: "#22c55e",
+};
+
+function PasswordStrengthBar({ password }: { password: string }) {
+  const strength = getPasswordStrength(password);
+  const color = STRENGTH_COLORS[strength];
+  const label = STRENGTH_LABELS[strength];
+
+  return (
+    <div style={{ marginTop: "8px" }}>
+      <div style={{ display: "flex", gap: "4px", marginBottom: "5px" }}>
+        {([1, 2, 3, 4] as StrengthLevel[]).map((level) => (
+          <div
+            key={level}
+            style={{
+              flex: 1,
+              height: "4px",
+              borderRadius: "2px",
+              backgroundColor: strength >= level ? color : "#e2e8f0",
+              transition: "background-color 0.25s ease",
+            }}
+          />
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: strength > 0 ? color : "#94a3b8" }}>
+        {strength > 0 && <span style={{ fontWeight: 600 }}>{label}</span>}
+        <span style={{ marginLeft: "auto", color: "#94a3b8" }}>
+          {password.length > 0 && strength < 4 && (
+            <>
+              {password.length < 8 && "mín. 8 caracteres · "}
+              {!/[A-Z]/.test(password) && "maiúscula · "}
+              {!/[0-9]/.test(password) && "número · "}
+              {!/[^A-Za-z0-9]/.test(password) && "símbolo"}
+            </>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Tela de Auth ─────────────────────────────────────────────────────────
 
 type AuthView = "login" | "register" | "forgot";
@@ -126,6 +194,7 @@ function TelaAuth() {
                 placeholder="••••••••"
                 style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
               />
+              {view === "register" && <PasswordStrengthBar password={password} />}
             </div>
           )}
 
