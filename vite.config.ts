@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
-const BASE_PATH = process.env.BASE_PATH || "/BancodeHoras/";
+const BASE_PATH = process.env.BASE_PATH || "/";
 
 export default defineConfig({
   base: BASE_PATH,
@@ -19,11 +19,13 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: 5173,
+    port: 5000,
     host: "0.0.0.0",
+    allowedHosts: true,
   },
   preview: {
-    port: 4173,
+    port: 5000,
     host: "0.0.0.0",
+    allowedHosts: true,
   },
 });
