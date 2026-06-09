@@ -1,0 +1,647 @@
+Migração completa para Supabase Auth — Banco de Horas
+Repositório
+sthephaniecorreaholanda-bit/BancodeHoras
+
+Objetivo
+Migrar completamente a autenticação de localStorage para Supabase Auth, remover todos os fallbacks para localStorage nas operações de dados, corrigir filtros de user_id em UPDATE/DELETE, e garantir isolamento total de dados por usuário via RLS.
+
+PASSO 1 — Criar arquivo SQL de migração
+Criar o arquivo supabase/migrations/001_rls_setup.sql com o seguinte conteúdo:
+
+
+-- 1. Adicionar user_id se não existir  
+ALTER TABLE "Horas"  
+  ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;  
+  
+-- 2. Índice de performance  
+CREATE INDEX IF NOT EXISTS idx_horas_user_id ON "Horas"(user_id);  
+  
+-- 3. Ativar RLS  
+ALTER TABLE "Horas" ENABLE ROW LEVEL SECURITY;  
+  
+-- 4. Remover políticas antigas se existirem  
+DROP POLICY IF EXISTS "select_own_records" ON "Horas";  
+DROP POLICY IF EXISTS "insert_own_records" ON "Horas";  
+DROP POLICY IF EXISTS "update_own_records" ON "Horas";  
+DROP POLICY IF EXISTS "delete_own_records" ON "Horas";  
+  
+-- 5. Política SELECT  
+CREATE POLICY "select_own_records"  
+  ON "Horas" FOR SELECT  
+  USING (auth.uid() = user_id);  
+  
+-- 6. Política INSERT  
+CREATE POLICY "insert_own_records"  
+  ON "Horas" FOR INSERT  
+  WITH CHECK (auth.uid() = user_id);  
+  
+-- 7. Política UPDATE  
+CREATE POLICY "update_own_records"  
+  ON "Horas" FOR UPDATE  
+  USING (auth.uid() = user_id)  
+  WITH CHECK (auth.uid() = user_id);  
+  
+-- 8. Política DELETE  
+CREATE POLICY "delete_own_records"  
+  ON "Horas" FOR DELETE  
+  USING (auth.uid() = user_id);
+PASSO 2 — Corrigir src/lib/supabaseClient.ts
+Remover os valores hardcoded de fallback. O arquivo deve lançar um erro claro se as variáveis de ambiente não estiverem definidas, em vez de usar credenciais embutidas no código:
+
+
+import { createClient } from '@supabase/supabase-js';  
+  
+function normalizeSupabaseUrl(raw?: string | null): string | null {  
+  if (!raw) return null;  
+  const t = raw.trim();  
+  const dash = t.match(/supabase\.(?:com|io)\/dashboard\/project\/(.+)$/i);  
+  if (dash && dash[1]) {  
+    const id = dash[1].split(/[/?#]/)[0];  
+    return `https://${id}.supabase.co`;  
+  }  
+  if (/^[a-z0-9_-]{10,}$/i.test(t) && !t.includes('.')) {  
+    return `https://${t}.supabase.co`;  
+  }  
+  if (/^https?:\/\//i.test(t)) return t;  
+  if (/^[^\s]+\.[^\s]+$/.test(t)) return `https://${t}`;  
+  return null;  
+}  
+  
+const rawUrl = import.meta.env.VITE_SUPABASE_URL;  
+const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY;  
+  
+const supabaseUrl = normalizeSupabaseUrl(rawUrl);  
+const supabaseKey = rawKey?.trim() || null;  
+  
+if (!supabaseUrl || !supabaseKey) {  
+  throw new Error(  
+    "Variáveis de ambiente VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY são obrigatórias. " +  
+    "Crie um arquivo .env na raiz do projeto com essas variáveis."  
+  );  
+}  
+  
+export const supabase = createClient(supabaseUrl, supabaseKey);
+PASSO 3 — Criar src/hooks/use-auth.ts
+Criar um novo hook centralizado de autenticação usando Supabase Auth:
+
+
+import { useState, useEffect } from "react";  
+import type { User, Session } from "@supabase/supabase-js";  
+import { supabase } from "@/lib/supabaseClient";  
+  
+export type AuthState = {  
+  user: User | null;  
+  session: Session | null;  
+  loading: boolean;  
+};  
+  
+export function useAuth(): AuthState {  
+  const [user, setUser] = useState<User | null>(null);  
+  const [session, setSession] = useState<Session | null>(null);  
+  const [loading, setLoading] = useState(true);  
+  
+  useEffect(() => {  
+    // Carrega sessão inicial  
+    supabase.auth.getSession().then(({ data: { session } }) => {  
+      setSession(session);  
+      setUser(session?.user ?? null);  
+      setLoading(false);  
+    });  
+  
+    // Escuta mudanças de estado de autenticação  
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(  
+      (_event, session) => {  
+        setSession(session);  
+        setUser(session?.user ?? null);  
+        setLoading(false);  
+      }  
+    );  
+  
+    return () => subscription.unsubscribe();  
+  }, []);  
+  
+  return { user, session, loading };  
+}
+PASSO 4 — Refatorar src/App.tsx
+Substituir completamente o conteúdo do arquivo. Remover todos os imports de auth.ts e storage.ts, remover a TelaLogin inline, e usar useAuth() para controle de sessão. Criar telas de Login, Cadastro e Recuperação de Senha inline no mesmo arquivo (ou em arquivos separados em src/pages/):
+
+
+import { useState } from "react";  
+import { Switch, Route, Router as WouterRouter } from "wouter";  
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";  
+import { Toaster } from "@/components/ui/toaster";  
+import { TooltipProvider } from "@/components/ui/tooltip";  
+import { ThemeProvider } from "@/hooks/use-theme";  
+import { Layout } from "@/components/Layout";  
+import Painel from "@/pages/Painel";  
+import RegistrarPonto from "@/pages/RegistrarPonto";  
+import Historico from "@/pages/Historico";  
+import Personalizacao from "@/pages/Personalizacao";  
+import Configuracoes from "@/pages/Configuracoes";  
+import Anual from "@/pages/Anual";  
+import NotFound from "@/pages/not-found";  
+import { supabase } from "@/lib/supabaseClient";  
+import { useAuth } from "@/hooks/use-auth";  
+  
+const queryClient = new QueryClient({  
+  defaultOptions: {  
+    queries: { staleTime: 1000 * 30, retry: 1 },  
+  },  
+});  
+  
+// ─── Tela de Login ────────────────────────────────────────────────────────  
+  
+type AuthView = "login" | "register" | "forgot";  
+  
+function TelaAuth() {  
+  const [view, setView] = useState<AuthView>("login");  
+  const [email, setEmail] = useState("");  
+  const [password, setPassword] = useState("");  
+  const [message, setMessage] = useState({ text: "", isError: false });  
+  const [submitting, setSubmitting] = useState(false);  
+  
+  async function handleSubmit(e: React.FormEvent) {  
+    e.preventDefault();  
+    setMessage({ text: "", isError: false });  
+    setSubmitting(true);  
+  
+    try {  
+      if (view === "register") {  
+        const { error } = await supabase.auth.signUp({ email, password });  
+        if (error) throw error;  
+        setMessage({  
+          text: "Conta criada! Verifique seu e-mail para confirmar o cadastro.",  
+          isError: false,  
+        });  
+        setView("login");  
+        setPassword("");  
+      } else if (view === "login") {  
+        const { error } = await supabase.auth.signInWithPassword({ email, password });  
+        if (error) throw error;  
+        // onAuthStateChange em useAuth() cuida do redirecionamento  
+      } else if (view === "forgot") {  
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {  
+          redirectTo: `${window.location.origin}/reset-password`,  
+        });  
+        if (error) throw error;  
+        setMessage({  
+          text: "E-mail de recuperação enviado! Verifique sua caixa de entrada.",  
+          isError: false,  
+        });  
+      }  
+    } catch (err: any) {  
+      const msg = err?.message ?? "Erro inesperado.";  
+      setMessage({ text: msg, isError: true });  
+    } finally {  
+      setSubmitting(false);  
+    }  
+  }  
+  
+  const titles: Record<AuthView, string> = {  
+    login: "Acessar Sistema",  
+    register: "Criar Conta",  
+    forgot: "Recuperar Senha",  
+  };  
+  
+  const buttonLabels: Record<AuthView, string> = {  
+    login: "Entrar",  
+    register: "Cadastrar",  
+    forgot: "Enviar e-mail",  
+  };  
+  
+  return (  
+    <div style={{  
+      display: "flex", justifyContent: "center", alignItems: "center",  
+      minHeight: "100vh", backgroundColor: "#0f172a", fontFamily: "sans-serif",  
+    }}>  
+      <div style={{  
+        background: "#ffffff", padding: "40px", borderRadius: "12px",  
+        width: "100%", maxWidth: "400px", boxShadow: "0 10px 25px rgba(0,0,0,0.5)",  
+        textAlign: "center",  
+      }}>  
+        <div style={{ fontSize: "40px", marginBottom: "10px" }}>⏰</div>  
+        <h2 style={{ margin: "0 0 5px 0", color: "#1e293b", fontSize: "24px", fontWeight: "bold" }}>  
+          BANCO DE HORAS PRO  
+        </h2>  
+        <p style={{ margin: "0 0 25px 0", color: "#64748b", fontSize: "14px" }}>  
+          {titles[view]}  
+        </p>  
+  
+        <form onSubmit={handleSubmit} style={{ textAlign: "left" }}>  
+          <div style={{ marginBottom: "15px" }}>  
+            <label style={{ display: "block", marginBottom: "5px", color: "#475569", fontSize: "14px", fontWeight: 600 }}>  
+              E-mail:  
+            </label>  
+            <input  
+              type="email"  
+              value={email}  
+              onChange={(e) => setEmail(e.target.value)}  
+              required  
+              placeholder="seu@email.com"  
+              style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}  
+            />  
+          </div>  
+  
+          {view !== "forgot" && (  
+            <div style={{ marginBottom: "20px" }}>  
+              <label style={{ display: "block", marginBottom: "5px", color: "#475569", fontSize: "14px", fontWeight: 600 }}>  
+                Senha:  
+              </label>  
+              <input  
+                type="password"  
+                value={password}  
+                onChange={(e) => setPassword(e.target.value)}  
+                required  
+                placeholder="••••••••"  
+                style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}  
+              />  
+            </div>  
+          )}  
+  
+          {message.text && (  
+            <p style={{ margin: "0 0 15px 0", fontSize: "13px", color: message.isError ? "#ef4444" : "#10b981", fontWeight: 600, textAlign: "center" }}>  
+              {message.text}  
+            </p>  
+          )}  
+  
+          <button  
+            type="submit"  
+            disabled={submitting}  
+            style={{ width: "100%", padding: "12px", borderRadius: "6px", border: "none", backgroundColor: "#1e3a8a", color: "#ffffff", fontSize: "16px", fontWeight: 600, cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.7 : 1 }}  
+          >  
+            {submitting ? "..." : buttonLabels[view]}  
+          </button>  
+        </form>  
+  
+        <div style={{ marginTop: "20px", fontSize: "13px", color: "#64748b", display: "flex", flexDirection: "column", gap: "8px" }}>  
+          {view === "login" && (  
+            <>  
+              <span>  
+                Não tem conta?{" "}  
+                <span onClick={() => { setView("register"); setMessage({ text: "", isError: false }); }} style={{ color: "#2563eb", cursor: "pointer", fontWeight: 600 }}>  
+                  Cadastre-se.  
+                </span>  
+              </span>  
+              <span>  
+                Esqueceu a senha?{" "}  
+                <span onClick={() => { setView("forgot"); setMessage({ text: "", isError: false }); }} style={{ color: "#2563eb", cursor: "pointer", fontWeight: 600 }}>  
+                  Recuperar acesso.  
+                </span>  
+              </span>  
+            </>  
+          )}  
+          {view !== "login" && (  
+            <span>  
+              Já tem conta?{" "}  
+              <span onClick={() => { setView("login"); setMessage({ text: "", isError: false }); }} style={{ color: "#2563eb", cursor: "pointer", fontWeight: 600 }}>  
+                Faça login.  
+              </span>  
+            </span>  
+          )}  
+        </div>  
+      </div>  
+    </div>  
+  );  
+}  
+  
+// ─── Router ───────────────────────────────────────────────────────────────  
+  
+function Router({ onLogout }: { onLogout: () => void }) {  
+  return (  
+    <Layout onLogout={onLogout}>  
+      <Switch>  
+        <Route path="/" component={Painel} />  
+        <Route path="/registrar" component={RegistrarPonto} />  
+        <Route path="/historico" component={Historico} />  
+        <Route path="/anual" component={Anual} />  
+        <Route path="/personalizacao" component={Personalizacao} />  
+        <Route path="/configuracoes" component={Configuracoes} />  
+        <Route component={NotFound} />  
+      </Switch>  
+    </Layout>  
+  );  
+}  
+  
+// ─── App ──────────────────────────────────────────────────────────────────  
+  
+function App() {  
+  const { user, loading } = useAuth();  
+  
+  async function handleLogout() {  
+    await supabase.auth.signOut();  
+    queryClient.clear();  
+  }  
+  
+  if (loading) {  
+    return (  
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", backgroundColor: "#0f172a" }}>  
+        <p style={{ color: "#94a3b8", fontFamily: "sans-serif" }}>Carregando...</p>  
+      </div>  
+    );  
+  }  
+  
+  return (  
+    <ThemeProvider>  
+      <QueryClientProvider client={queryClient}>  
+        <TooltipProvider>  
+          {user ? (  
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>  
+              <Router onLogout={handleLogout} />  
+            </WouterRouter>  
+          ) : (  
+            <TelaAuth />  
+          )}  
+          <Toaster />  
+        </TooltipProvider>  
+      </QueryClientProvider>  
+    </ThemeProvider>  
+  );  
+}  
+  
+export default App;
+PASSO 5 — Refatorar src/lib/api-local.ts
+Fazer as seguintes alterações cirúrgicas no arquivo existente:
+
+5a. Remover helpers de localStorage que não serão mais necessários
+Remover as funções: getLocalRecordsKey(), getLocalLastIdKey(), readLocalRecords(), writeLocalRecords(), nextLocalId() (linhas 71–108).
+
+5b. Corrigir loadRecords() — remover fallback localStorage
+Substituir o bloco catch (linhas 158–163) por:
+
+
+} catch (err) {  
+    throw new Error("Falha ao carregar registros. Verifique sua conexão.");  
+  }
+5c. Corrigir loadSettings() — usar chave fixa sem depender de userKey()
+A função loadSettings() chama userKey("settings") que depende do usuário local. Como a autenticação agora é via Supabase, usar uma chave fixa de localStorage para settings (as settings continuam em localStorage por ora):
+
+
+const SETTINGS_KEY = "bh:settings";  
+  
+function loadSettings(): Settings {  
+  const raw = readKey<LegacySettings>(SETTINGS_KEY, DEFAULT_SETTINGS);  
+  if (raw.defaultEntryTime && raw.defaultExitTime) {  
+    return {  
+      id: raw.id ?? 1,  
+      defaultEntryTime: raw.defaultEntryTime,  
+      defaultExitTime: raw.defaultExitTime,  
+      manualAdjustmentMinutes: raw.manualAdjustmentMinutes ?? 0,  
+      lunchBreakMinutes: raw.lunchBreakMinutes ?? 60,  
+      goalMinutes: raw.goalMinutes ?? null,  
+    };  
+  }  
+  return { ...DEFAULT_SETTINGS, ...raw };  
+}  
+  
+function saveSettings(s: Settings): void {  
+  writeKey(SETTINGS_KEY, s);  
+}
+5d. Corrigir useCreateRecord() — remover fallback localStorage
+Substituir o bloco catch inteiro (linhas 321–339) por:
+
+
+} catch (err) {  
+        const msg = err instanceof Error ? err.message : "Erro ao criar registro.";  
+        throw new Error(msg);  
+      }
+5e. Corrigir useUpdateRecord() — mover await para dentro do try, adicionar filtro user_id, remover fallback
+Substituir a função useUpdateRecord() inteira (linhas 345–428) por:
+
+
+export function useUpdateRecord() {  
+  const qc = useQueryClient();  
+  return useMutation({  
+    mutationFn: async ({  
+      id,  
+      data,  
+    }: {  
+      id: number;  
+      data: TimeRecordUpdate;  
+    }): Promise<TimeRecord> => {  
+      const rows = await loadRecords();  
+      const idx = rows.findIndex((r) => r.id === id);  
+      if (idx === -1) throw new Error("Registro não encontrado.");  
+  
+      const merged: TimeRecord = {  
+        ...rows[idx],  
+        type: data.type ?? rows[idx].type,  
+        entryTime: data.entryTime !== undefined ? data.entryTime : rows[idx].entryTime,  
+        exitTime: data.exitTime !== undefined ? data.exitTime : rows[idx].exitTime,  
+        note: data.note !== undefined ? data.note : rows[idx].note,  
+      };  
+  
+      const settings = loadSettings();  
+      const { workedMinutes, balanceMinutes } = computeBalanceForRecord(  
+        {  
+          date: merged.date,  
+          type: merged.type,  
+          entryTime: merged.entryTime,  
+          exitTime: merged.exitTime,  
+          note: merged.note,  
+        },  
+        settings,  
+      );  
+      merged.workedMinutes = workedMinutes;  
+      merged.balanceMinutes = balanceMinutes;  
+  
+      try {  
+        const { data: { user } } = await supabase.auth.getUser();  
+        if (!user) throw new Error("Usuário não autenticado.");  
+  
+        const { data: updated, error } = await supabase  
+          .from<DatabaseRecord>(RECORDS_TABLE)  
+          .update({  
+            type: merged.type,  
+            entry_time: merged.entryTime,  
+            exit_time: merged.exitTime ?? null,  
+            worked_minutes: merged.workedMinutes,  
+            balance_minutes: merged.balanceMinutes,  
+          })  
+          .eq("id", id)  
+          .eq("user_id", user.id)  
+          .select("*")  
+          .single();  
+  
+        if (error) throw new Error(error.message);  
+        if (!updated) throw new Error("Falha ao atualizar o registro.");  
+  
+        return {  
+          id: updated.id,  
+          date: updated.date,  
+          type: (updated.type as any) ?? "WORK_DAY",  
+          entryTime: updated.entry_time,  
+          exitTime: updated.exit_time,  
+          workedMinutes: merged.workedMinutes,  
+          balanceMinutes: merged.balanceMinutes,  
+          note: null,  
+          createdAt: updated.created_at,  
+        };  
+      } catch (err) {  
+        const msg = err instanceof Error ? err.message : "Erro ao atualizar registro.";  
+        throw new Error(msg);  
+      }  
+    },  
+    onSuccess: () => invalidateAll(qc),  
+  });  
+}
+5f. Corrigir useDeleteRecord() — adicionar filtro user_id, remover fallback
+Substituir a função useDeleteRecord() inteira (linhas 430–448) por:
+
+
+export function useDeleteRecord() {  
+  const qc = useQueryClient();  
+  return useMutation({  
+    mutationFn: async ({ id }: { id: number }): Promise<void> => {  
+      const { data: { user } } = await supabase.auth.getUser();  
+      if (!user) throw new Error("Usuário não autenticado.");  
+  
+      const { error } = await supabase  
+        .from<DatabaseRecord>(RECORDS_TABLE)  
+        .delete()  
+        .eq("id", id)  
+        .eq("user_id", user.id);  
+  
+      if (error) throw new Error(error.message);  
+    },  
+    onSuccess: () => invalidateAll(qc),  
+  });  
+}
+5g. Corrigir useDeleteRecordsBulk() — adicionar filtro user_id, remover fallback
+Substituir a função useDeleteRecordsBulk() inteira (linhas 450–476) por:
+
+
+export function useDeleteRecordsBulk() {  
+  const qc = useQueryClient();  
+  return useMutation({  
+    mutationFn: async ({ ids }: { ids: number[] }): Promise<{ deleted: number }> => {  
+      const unique = Array.from(new Set(ids)).filter((n) => Number.isFinite(n));  
+      if (unique.length === 0) return { deleted: 0 };  
+  
+      const { data: { user } } = await supabase.auth.getUser();  
+      if (!user) throw new Error("Usuário não autenticado.");  
+  
+      const { data: deletedRows, error } = await supabase  
+        .from<DatabaseRecord>(RECORDS_TABLE)  
+        .delete()  
+        .in("id", unique)  
+        .eq("user_id", user.id)  
+        .select("id");  
+  
+      if (error) throw new Error(error.message);  
+      return { deleted: deletedRows?.length ?? 0 };  
+    },  
+    onSuccess: () => invalidateAll(qc),  
+  });  
+}
+5h. Corrigir useBulkGenerateMonth() — adicionar user_id no INSERT, corrigir try/catch, remover fallback
+Substituir a função useBulkGenerateMonth() inteira (linhas 496–566) por:
+
+
+export function useBulkGenerateMonth() {  
+  const qc = useQueryClient();  
+  return useMutation({  
+    mutationFn: async ({  
+      data,  
+    }: {  
+      data: BulkGenerateBody;  
+    }): Promise<BulkGenerateResult> => {  
+      const { data: { user } } = await supabase.auth.getUser();  
+      if (!user) throw new Error("Usuário não autenticado.");  
+  
+      const rows = await loadRecords();  
+      const existing = new Set(rows.map((r) => r.date));  
+      const settings = loadSettings();  
+      const { toCreate, skipped } = bulkGenerateInputs(  
+        data.year,  
+        data.month,  
+        existing,  
+        settings,  
+      );  
+  
+      if (toCreate.length === 0) {  
+        return { created: 0, skipped };  
+      }  
+  
+      const createdAt = new Date().toISOString();  
+      const recordsToInsert = toCreate.map((input) => {  
+        const { workedMinutes, balanceMinutes } = computeBalanceForRecord(input, settings);  
+        return {  
+          user_id: user.id,  
+          date: input.date,  
+          type: input.type,  
+          entry_time: input.entryTime ?? null,  
+          exit_time: input.exitTime ?? null,  
+          lunch_start: null,  
+          lunch_end: null,  
+          worked_minutes: workedMinutes,  
+          balance_minutes: balanceMinutes,  
+          created_at: createdAt,  
+        };  
+      });  
+  
+      const { error } = await supabase  
+        .from<DatabaseRecord>(RECORDS_TABLE)  
+        .insert(recordsToInsert);  
+  
+      if (error) throw new Error(error.message);  
+      return { created: toCreate.length, skipped };  
+    },  
+    onSuccess: () => invalidateAll(qc),  
+  });  
+}
+5i. Remover import de userKey do topo do arquivo
+Na linha 7, remover userKey do import de ./storage:
+
+
+import { readKey, writeKey } from "./storage";
+PASSO 6 — Simplificar src/lib/storage.ts
+Remover as funções relacionadas à autenticação local. O arquivo final deve ser:
+
+
+const NAMESPACE = "bh";  
+  
+export function readKey<T>(key: string, fallback: T): T {  
+  try {  
+    const raw = localStorage.getItem(key);  
+    if (raw === null) return fallback;  
+    return JSON.parse(raw) as T;  
+  } catch {  
+    return fallback;  
+  }  
+}  
+  
+export function writeKey<T>(key: string, value: T): void {  
+  localStorage.setItem(key, JSON.stringify(value));  
+}  
+  
+export function removeKey(key: string): void {  
+  localStorage.removeItem(key);  
+}
+Remover: getCurrentUser(), setCurrentUser(), clearCurrentUser(), userKey(), USERS_STORAGE_KEY, CURRENT_USER_KEY, USERS_KEY.
+
+PASSO 7 — Atualizar src/components/Layout.tsx
+Substituir o import de getCurrentUser por useAuth, e usar o e-mail do usuário Supabase para exibição:
+
+Remover a linha: import { getCurrentUser } from "@/lib/storage";
+Adicionar: import { useAuth } from "@/hooks/use-auth";
+Substituir a linha const currentUser = getCurrentUser(); por:
+
+const { user } = useAuth();  
+const currentUser = user?.email ?? null;
+PASSO 8 — Deletar src/lib/auth.ts
+Deletar o arquivo src/lib/auth.ts completamente. Ele não é mais necessário após a migração.
+
+PASSO 9 — Criar arquivo .env.example
+Criar o arquivo .env.example na raiz do projeto:
+
+
+VITE_SUPABASE_URL=https://SEU_PROJECT_ID.supabase.co  
+VITE_SUPABASE_ANON_KEY=sua_anon_key_aqui
+E verificar se .env está no .gitignore. Se não estiver, adicionar a linha .env ao .gitignore.
+
+Notas importantes para o agente
+O arquivo src/lib/api-local.ts usa userKey apenas em loadSettings() e saveSettings(). Após a mudança para SETTINGS_KEY = "bh:settings", o import de userKey pode ser removido do topo do arquivo.
+Verificar se há outros arquivos que importam de src/lib/auth.ts (como getCurrentUser, listUsers, etc.) e corrigir esses imports. Fazer uma busca por from "@/lib/auth" e from "./auth" em todo o projeto.
+Verificar se há outros arquivos que importam getCurrentUser de storage.ts além de Layout.tsx. Fazer uma busca por getCurrentUser em todo o projeto.
+Após todas as mudanças, rodar npm run build (ou yarn build) para verificar se não há erros de TypeScript.
+O script SQL em supabase/migrations/001_rls_setup.sql deve ser executado manualmente no Supabase Dashboard (SQL Editor) pelo usuário, pois o agente não tem acesso ao banco de dados.

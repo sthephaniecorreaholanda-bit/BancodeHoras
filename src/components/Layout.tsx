@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
-import { getCurrentUser } from "@/lib/storage";
+import { useAuth } from "@/hooks/use-auth";
 
 const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Painel de Resumo", exact: true },
@@ -33,7 +33,8 @@ export function Layout({
 }) {
   const { theme, toggleTheme } = useTheme();
   const [location] = useLocation();
-  const currentUser = getCurrentUser();
+  const { user } = useAuth();
+  const currentUser = user?.email ?? null;
 
   return (
     <div className="min-h-screen bg-background flex">

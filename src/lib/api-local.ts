@@ -4,7 +4,7 @@ import {
   useQueryClient,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import { readKey, userKey, writeKey } from "./storage";
+import { readKey, writeKey } from "./storage";
 import { supabase } from "./supabaseClient";
 import {
   bulkGenerateInputs,
@@ -67,44 +67,27 @@ type DatabaseRecord = {
 
 const RECORDS_TABLE = "Horas";
 
-// Helper to derive local storage keys without throwing when no user is logged
-function getLocalRecordsKey(): string {
-  try {
-    return userKey("records");
-  } catch {
-    return "bh:public:records";
+const SETTINGS_KEY = "bh:settings";
+
+type LegacySettings = Settings & { dailyTargetMinutes?: number };
+
+function loadSettings(): Settings {
+  const raw = readKey<LegacySettings>(SETTINGS_KEY, DEFAULT_SETTINGS);
+  if (raw.defaultEntryTime && raw.defaultExitTime) {
+    return {
+      id: raw.id ?? 1,
+      defaultEntryTime: raw.defaultEntryTime,
+      defaultExitTime: raw.defaultExitTime,
+      manualAdjustmentMinutes: raw.manualAdjustmentMinutes ?? 0,
+      lunchBreakMinutes: raw.lunchBreakMinutes ?? 60,
+      goalMinutes: raw.goalMinutes ?? null,
+    };
   }
+  return { ...DEFAULT_SETTINGS, ...raw };
 }
 
-function getLocalLastIdKey(): string {
-  try {
-    return userKey("lastRecordId");
-  } catch {
-    return "bh:public:lastRecordId";
-  }
-}
-
-async function readLocalRecords(): Promise<TimeRecord[]> {
-  try {
-    return readKey<TimeRecord[]>(getLocalRecordsKey(), []);
-  } catch {
-    return [];
-  }
-}
-
-async function writeLocalRecords(records: TimeRecord[]): Promise<void> {
-  try {
-    writeKey(getLocalRecordsKey(), records);
-    const maxId = records.reduce((m, r) => Math.max(m, r.id), 0);
-    writeKey(getLocalLastIdKey(), maxId);
-  } catch {
-    // ignore
-  }
-}
-
-function nextLocalId(records: TimeRecord[]): number {
-  const maxId = records.reduce((m, r) => Math.max(m, r.id), 0);
-  return maxId + 1;
+function saveSettings(s: Settings): void {
+  writeKey(SETTINGS_KEY, s);
 }
 
 async function loadRecords(): Promise<TimeRecord[]> {
@@ -116,7 +99,7 @@ async function loadRecords(): Promise<TimeRecord[]> {
 
   try {
     const { data, error } = await supabase
-      .from<DatabaseRecord>(RECORDS_TABLE)
+      .from(RECORDS_TABLE)
       .select(
         "id,date,type,entry_time,exit_time,lunch_start,lunch_end,worked_minutes,balance_minutes,created_at",
       )
@@ -139,7 +122,6 @@ async function loadRecords(): Promise<TimeRecord[]> {
         settings,
       );
 
-      // For COMPENSATED_LEAVE ensure we use the computed values (debit)
       const finalWorked = recType === "COMPENSATED_LEAVE" ? workedMinutes : (row.worked_minutes ?? workedMinutes);
       const finalBalance = recType === "COMPENSATED_LEAVE" ? balanceMinutes : (row.balance_minutes ?? balanceMinutes);
 
@@ -156,32 +138,8 @@ async function loadRecords(): Promise<TimeRecord[]> {
       };
     });
   } catch (err) {
-    // Supabase failed — fallback to local storage
-    const local = await readLocalRecords();
-    if (local.length === 0) return [];
-    return local.sort((a, b) => a.date.localeCompare(b.date));
+    throw new Error("Falha ao carregar registros. Verifique sua conexão.");
   }
-}
-
-type LegacySettings = Settings & { dailyTargetMinutes?: number };
-
-function loadSettings(): Settings {
-  const raw = readKey<LegacySettings>(userKey("settings"), DEFAULT_SETTINGS);
-  if (raw.defaultEntryTime && raw.defaultExitTime) {
-    return {
-      id: raw.id ?? 1,
-      defaultEntryTime: raw.defaultEntryTime,
-      defaultExitTime: raw.defaultExitTime,
-      manualAdjustmentMinutes: raw.manualAdjustmentMinutes ?? 0,
-      lunchBreakMinutes: raw.lunchBreakMinutes ?? 60,
-      goalMinutes: raw.goalMinutes ?? null,
-    };
-  }
-  return { ...DEFAULT_SETTINGS, ...raw };
-}
-
-function saveSettings(s: Settings): void {
-  writeKey(userKey("settings"), s);
 }
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
@@ -280,27 +238,23 @@ export function useCreateRecord() {
 
       const createdAt = new Date().toISOString();
       try {
-        const {
-  data: { user },
-} = await supabase.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Usuário não autenticado.");
 
-if (!user) {
-  throw new Error("Usuário não autenticado");
-}
         const { data: created, error } = await supabase
-  .from<DatabaseRecord>(RECORDS_TABLE)
-  .insert({
-    user_id: user.id,
-    date: data.date,
-    type: data.type,
-    entry_time: data.entryTime ?? null,
-    exit_time: data.exitTime ?? null,
-    lunch_start: null,
-    lunch_end: null,
-    worked_minutes: workedMinutes,
-    balance_minutes: balanceMinutes,
-    created_at: createdAt,
-  })
+          .from(RECORDS_TABLE)
+          .insert({
+            user_id: user.id,
+            date: data.date,
+            type: data.type,
+            entry_time: data.entryTime ?? null,
+            exit_time: data.exitTime ?? null,
+            lunch_start: null,
+            lunch_end: null,
+            worked_minutes: workedMinutes,
+            balance_minutes: balanceMinutes,
+            created_at: createdAt,
+          })
           .select("*")
           .single();
 
@@ -319,23 +273,8 @@ if (!user) {
           createdAt: created.created_at,
         };
       } catch (err) {
-        // Supabase failed — fallback to local storage
-        const local = await readLocalRecords();
-        const id = nextLocalId(local);
-        const record: TimeRecord = {
-          id,
-          date: data.date,
-          type: data.type as any,
-          entryTime: data.entryTime ?? null,
-          exitTime: data.exitTime ?? null,
-          workedMinutes,
-          balanceMinutes,
-          note: data.note ?? null,
-          createdAt,
-        };
-        local.push(record);
-        await writeLocalRecords(local);
-        return record;
+        const msg = err instanceof Error ? err.message : "Erro ao criar registro.";
+        throw new Error(msg);
       }
     },
     onSuccess: () => invalidateAll(qc),
@@ -378,19 +317,24 @@ export function useUpdateRecord() {
       merged.workedMinutes = workedMinutes;
       merged.balanceMinutes = balanceMinutes;
 
-      const { data: updated, error } = await supabase
-        .from<DatabaseRecord>(RECORDS_TABLE)
-        .update({
-          type: merged.type,
-          entry_time: merged.entryTime,
-          exit_time: merged.exitTime ?? null,
-          worked_minutes: merged.workedMinutes,
-          balance_minutes: merged.balanceMinutes,
-        })
-        .eq("id", id)
-        .select("*")
-        .single();
       try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Usuário não autenticado.");
+
+        const { data: updated, error } = await supabase
+          .from(RECORDS_TABLE)
+          .update({
+            type: merged.type,
+            entry_time: merged.entryTime,
+            exit_time: merged.exitTime ?? null,
+            worked_minutes: merged.workedMinutes,
+            balance_minutes: merged.balanceMinutes,
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("*")
+          .single();
+
         if (error) throw new Error(error.message);
         if (!updated) throw new Error("Falha ao atualizar o registro.");
 
@@ -406,21 +350,8 @@ export function useUpdateRecord() {
           createdAt: updated.created_at,
         };
       } catch (err) {
-        // Supabase update failed — fallback to local storage
-        const local = await readLocalRecords();
-        const idx = local.findIndex((r) => r.id === id);
-        if (idx === -1) throw new Error("Registro não encontrado.");
-        local[idx] = {
-          ...local[idx],
-          type: merged.type,
-          entryTime: merged.entryTime,
-          exitTime: merged.exitTime ?? null,
-          workedMinutes: merged.workedMinutes,
-          balanceMinutes: merged.balanceMinutes,
-          note: merged.note ?? null,
-        };
-        await writeLocalRecords(local);
-        return local[idx];
+        const msg = err instanceof Error ? err.message : "Erro ao atualizar registro.";
+        throw new Error(msg);
       }
     },
     onSuccess: () => invalidateAll(qc),
@@ -431,17 +362,16 @@ export function useDeleteRecord() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id }: { id: number }): Promise<void> => {
-      try {
-        const { error } = await supabase
-          .from<DatabaseRecord>(RECORDS_TABLE)
-          .delete()
-          .eq("id", id);
-        if (error) throw new Error(error.message);
-      } catch (err) {
-        const local = await readLocalRecords();
-        const remaining = local.filter((r) => r.id !== id);
-        await writeLocalRecords(remaining);
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      const { error } = await supabase
+        .from(RECORDS_TABLE)
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
+
+      if (error) throw new Error(error.message);
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -454,22 +384,18 @@ export function useDeleteRecordsBulk() {
       const unique = Array.from(new Set(ids)).filter((n) => Number.isFinite(n));
       if (unique.length === 0) return { deleted: 0 };
 
-      try {
-        const { data: deletedRows, error } = await supabase
-          .from<DatabaseRecord>(RECORDS_TABLE)
-          .delete()
-          .in("id", unique)
-          .select("id");
-        if (error) throw new Error(error.message);
-        return { deleted: deletedRows?.length ?? 0 };
-      } catch (err) {
-        // Supabase delete failed — fallback to local storage
-        const local = await readLocalRecords();
-        const before = local.length;
-        const remaining = local.filter((r) => !unique.includes(r.id));
-        await writeLocalRecords(remaining);
-        return { deleted: Math.max(0, before - remaining.length) };
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      const { data: deletedRows, error } = await supabase
+        .from(RECORDS_TABLE)
+        .delete()
+        .in("id", unique)
+        .eq("user_id", user.id)
+        .select("id");
+
+      if (error) throw new Error(error.message);
+      return { deleted: deletedRows?.length ?? 0 };
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -501,6 +427,9 @@ export function useBulkGenerateMonth() {
     }: {
       data: BulkGenerateBody;
     }): Promise<BulkGenerateResult> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
       const rows = await loadRecords();
       const existing = new Set(rows.map((r) => r.date));
       const settings = loadSettings();
@@ -519,6 +448,7 @@ export function useBulkGenerateMonth() {
       const recordsToInsert = toCreate.map((input) => {
         const { workedMinutes, balanceMinutes } = computeBalanceForRecord(input, settings);
         return {
+          user_id: user.id,
           date: input.date,
           type: input.type,
           entry_time: input.entryTime ?? null,
@@ -532,34 +462,11 @@ export function useBulkGenerateMonth() {
       });
 
       const { error } = await supabase
-        .from<DatabaseRecord>(RECORDS_TABLE)
+        .from(RECORDS_TABLE)
         .insert(recordsToInsert);
-      try {
-        if (error) throw new Error(error.message);
-        return { created: toCreate.length, skipped };
-      } catch (err) {
-        // Supabase bulk insert failed — fallback to local storage
-        const local = await readLocalRecords();
-        let id = nextLocalId(local);
-        const createdAt = new Date().toISOString();
-        const toInsertLocal = recordsToInsert.map((r) => {
-          const rec: TimeRecord = {
-            id: id++,
-            date: r.date,
-            type: r.type as any,
-            entryTime: r.entry_time,
-            exitTime: r.exit_time,
-            workedMinutes: r.worked_minutes ?? 0,
-            balanceMinutes: r.balance_minutes ?? 0,
-            note: null,
-            createdAt,
-          };
-          return rec;
-        });
-        const merged = [...local, ...toInsertLocal];
-        await writeLocalRecords(merged);
-        return { created: toCreate.length, skipped };
-      }
+
+      if (error) throw new Error(error.message);
+      return { created: toCreate.length, skipped };
     },
     onSuccess: () => invalidateAll(qc),
   });
