@@ -1,0 +1,2 @@
+- [Auth redirects GitHub Pages](auth-redirects-gh-pages.md) — getSiteUrl() centraliza todos os redirectTo/emailRedirectTo; evitar strings hardcoded.
+- [Delete Account Edge Function](delete-account-edge-fn.md) — exclusão usa Edge Function Deno + service_role_key; CASCADE na FK user_id limpa "Horas" automaticamente.

@@ -9,12 +9,14 @@ export type AuthState = {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isPasswordRecovery: boolean;
 };
 
 export function useAuth(): AuthState {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -41,7 +43,23 @@ export function useAuth(): AuthState {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event: string, session: Session | null) => {
+      (event: string, session: Session | null) => {
+        if (event === "PASSWORD_RECOVERY") {
+          setIsPasswordRecovery(true);
+          setSession(session);
+          setUser(session?.user ?? null);
+          setLoading(false);
+          return;
+        }
+
+        if (event === "SIGNED_OUT") {
+          setIsPasswordRecovery(false);
+        }
+
+        if (event === "USER_UPDATED") {
+          setIsPasswordRecovery(false);
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -51,5 +69,5 @@ export function useAuth(): AuthState {
     return () => subscription.unsubscribe();
   }, []);
 
-  return { user, session, loading };
+  return { user, session, loading, isPasswordRecovery };
 }

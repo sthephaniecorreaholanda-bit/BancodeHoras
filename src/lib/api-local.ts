@@ -471,3 +471,37 @@ export function useBulkGenerateMonth() {
     onSuccess: () => invalidateAll(qc),
   });
 }
+
+/**
+ * Deletes the authenticated user's account permanently.
+ * Calls the Supabase Edge Function "delete-account" which:
+ *   1. Verifies the caller's JWT
+ *   2. Calls auth.admin.deleteUser() server-side (requires service_role_key)
+ *   3. ON DELETE CASCADE on "Horas".user_id removes all records automatically
+ *
+ * After the Edge Function call, the client clears localStorage and signs out.
+ */
+export function useDeleteAccount() {
+  return useMutation({
+    mutationFn: async (): Promise<void> => {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) throw new Error("Sessão inválida. Faça login novamente.");
+
+      const { error } = await supabase.functions.invoke("delete-account", {
+        method: "POST",
+      });
+
+      if (error) {
+        throw new Error(error.message ?? "Falha ao excluir conta.");
+      }
+
+      // Clear all local data
+      localStorage.removeItem("bh:settings");
+      localStorage.removeItem("bh:no-remember");
+      sessionStorage.removeItem("bh:session-active");
+
+      // Sign out (session is already invalidated server-side)
+      await supabase.auth.signOut();
+    },
+  });
+}

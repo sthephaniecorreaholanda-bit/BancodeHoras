@@ -13,7 +13,7 @@ import Personalizacao from "@/pages/Personalizacao";
 import Configuracoes from "@/pages/Configuracoes";
 import Anual from "@/pages/Anual";
 import NotFound from "@/pages/not-found";
-import { supabase, isSupabaseConfigured } from "@/lib/supabaseClient";
+import { supabase, isSupabaseConfigured, getSiteUrl } from "@/lib/supabaseClient";
 import { useAuth, NO_REMEMBER_KEY, SESSION_ACTIVE_KEY } from "@/hooks/use-auth";
 
 const queryClient = new QueryClient({
@@ -109,8 +109,18 @@ function TelaAuth() {
     setSubmitting(true);
 
     try {
+      const siteUrl = getSiteUrl();
+
       if (view === "register") {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            // Override the Supabase dashboard "Site URL" so the confirmation
+            // email always points to the correct production URL.
+            emailRedirectTo: siteUrl,
+          },
+        });
         if (error) throw error;
         setMessage({
           text: "Conta criada! Verifique seu e-mail para confirmar o cadastro.",
@@ -129,7 +139,10 @@ function TelaAuth() {
         sessionStorage.setItem(SESSION_ACTIVE_KEY, "1");
       } else if (view === "forgot") {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/reset-password`,
+          // After clicking the reset link, Supabase will redirect to this URL
+          // with #type=recovery&access_token=... — the app handles it via
+          // the PASSWORD_RECOVERY event in useAuth.
+          redirectTo: siteUrl,
         });
         if (error) throw error;
         setMessage({
@@ -303,6 +316,118 @@ function TelaAuth() {
   );
 }
 
+// ─── Tela de Redefinição de Senha ─────────────────────────────────────────
+// Shown after user clicks the password-reset link in their email.
+// Supabase fires PASSWORD_RECOVERY which sets isPasswordRecovery = true in useAuth.
+
+function TelaRedefinirSenha() {
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [message, setMessage] = useState({ text: "", isError: false });
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (getPasswordStrength(newPassword) < 3) {
+      setMessage({ text: "Escolha uma senha mais forte (pelo menos 'Boa').", isError: true });
+      return;
+    }
+    setSubmitting(true);
+    setMessage({ text: "", isError: false });
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setDone(true);
+      setMessage({ text: "Senha atualizada com sucesso! Fazendo login...", isError: false });
+      // Sign out so the user logs in freshly with the new password
+      setTimeout(async () => {
+        await supabase.auth.signOut();
+      }, 2000);
+    } catch (err: any) {
+      setMessage({ text: err?.message ?? "Erro ao redefinir senha.", isError: true });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={{
+      display: "flex", justifyContent: "center", alignItems: "center",
+      minHeight: "100vh", backgroundColor: "#0f172a", fontFamily: "sans-serif",
+    }}>
+      <div style={{
+        background: "#ffffff", padding: "40px", borderRadius: "12px",
+        width: "100%", maxWidth: "400px", boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: "40px", marginBottom: "10px" }}>🔐</div>
+        <h2 style={{ margin: "0 0 5px 0", color: "#1e293b", fontSize: "22px", fontWeight: "bold" }}>
+          Nova Senha
+        </h2>
+        <p style={{ margin: "0 0 25px 0", color: "#64748b", fontSize: "14px" }}>
+          Escolha uma senha segura para sua conta.
+        </p>
+
+        {!done ? (
+          <form onSubmit={handleSubmit} style={{ textAlign: "left" }}>
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ display: "block", marginBottom: "5px", color: "#475569", fontSize: "14px", fontWeight: 600 }}>
+                Nova Senha:
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  style={{ width: "100%", padding: "10px", paddingRight: "40px", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  style={{
+                    position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer", padding: "2px",
+                    color: "#94a3b8", display: "flex", alignItems: "center",
+                  }}
+                >
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+              <PasswordStrengthBar password={newPassword} />
+            </div>
+
+            {message.text && (
+              <p style={{ margin: "0 0 15px 0", fontSize: "13px", color: message.isError ? "#ef4444" : "#10b981", fontWeight: 600, textAlign: "center" }}>
+                {message.text}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{
+                width: "100%", padding: "12px", borderRadius: "6px", border: "none",
+                backgroundColor: "#1e3a8a", color: "#ffffff", fontSize: "16px", fontWeight: 600,
+                cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.7 : 1,
+              }}
+            >
+              {submitting ? "Salvando..." : "Salvar Nova Senha"}
+            </button>
+          </form>
+        ) : (
+          <p style={{ color: "#10b981", fontWeight: 600, fontSize: "15px" }}>
+            {message.text}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────
 
 function Router({ onLogout }: { onLogout: () => void }) {
@@ -360,7 +485,7 @@ function TelaConfiguracao() {
 // ─── App ──────────────────────────────────────────────────────────────────
 
 function App() {
-  const { user, loading } = useAuth();
+  const { user, loading, isPasswordRecovery } = useAuth();
 
   if (!isSupabaseConfigured) {
     return <TelaConfiguracao />;
@@ -377,6 +502,11 @@ function App() {
         <p style={{ color: "#94a3b8", fontFamily: "sans-serif" }}>Carregando...</p>
       </div>
     );
+  }
+
+  // Password recovery takes precedence — show reset form regardless of user state
+  if (isPasswordRecovery) {
+    return <TelaRedefinirSenha />;
   }
 
   return (

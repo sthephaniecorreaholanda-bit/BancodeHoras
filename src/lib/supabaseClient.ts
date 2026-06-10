@@ -27,3 +27,18 @@ export const isSupabaseConfigured = !!(supabaseUrl && supabaseKey);
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl!, supabaseKey!)
   : (null as any);
+
+/**
+ * Returns the canonical site URL for auth redirects.
+ * Priority:
+ *  1. VITE_SITE_URL env var (set this in production builds)
+ *  2. window.location.origin + Vite BASE_URL (works in dev and GitHub Pages builds)
+ */
+export function getSiteUrl(): string {
+  const explicit = import.meta.env.VITE_SITE_URL as string | undefined;
+  if (explicit) return explicit.replace(/\/$/, '');
+  const base = import.meta.env.BASE_URL ?? '/';
+  const origin = window.location.origin;
+  const path = base.endsWith('/') ? base.slice(0, -1) : base;
+  return origin + path;
+}
