@@ -72,10 +72,9 @@ function EmailConfirmationBanner({ email }: { email: string }) {
 
 function BottomNav({ onLogout }: { onLogout?: () => void }) {
   const [location] = useLocation();
-  const { theme, toggleTheme } = useTheme();
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border flex items-stretch h-16 safe-bottom">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border flex items-stretch h-16">
       {navItems.map(({ href, icon: Icon, shortLabel, exact }) => {
         const active = exact ? location === "/" : location.startsWith(href);
         return (
@@ -83,15 +82,26 @@ function BottomNav({ onLogout }: { onLogout?: () => void }) {
             key={href}
             href={href}
             className={cn(
-              "flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors",
+              "flex-1 flex flex-col items-center justify-center gap-0.5 text-[9px] font-medium transition-colors",
               active ? "text-primary" : "text-muted-foreground"
             )}
           >
-            <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+            <Icon size={18} strokeWidth={active ? 2.5 : 2} />
             <span className="leading-none">{shortLabel}</span>
           </Link>
         );
       })}
+
+      {onLogout && (
+        <button
+          onClick={onLogout}
+          aria-label="Sair"
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 text-[9px] font-medium text-muted-foreground hover:text-destructive transition-colors"
+        >
+          <LogOut size={18} strokeWidth={2} />
+          <span className="leading-none">Sair</span>
+        </button>
+      )}
     </nav>
   );
 }
