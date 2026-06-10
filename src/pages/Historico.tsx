@@ -149,7 +149,7 @@ function EditableCard({
             type="checkbox"
             checked={selected}
             onChange={() => onToggleSelected(record.id)}
-            className="mt-1 h-4 w-4 rounded border-input"
+            className="mt-1 h-4 w-4 rounded border-input flex-shrink-0"
             aria-label="Selecionar registro"
           />
           <div className="flex-1 min-w-0">
@@ -164,7 +164,7 @@ function EditableCard({
                 {TYPE_LABELS[record.type]}
               </span>
             </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
               {record.entryTime && record.exitTime ? (
                 <>
                   <span>
@@ -227,7 +227,6 @@ function EditableCard({
       ) : (
         /* ── Expanded edit view ── */
         <div className="p-4 space-y-3">
-          {/* Header */}
           <div className="flex items-center justify-between">
             <span className="font-semibold text-sm">{formatDate(record.date)}</span>
             <button
@@ -239,7 +238,6 @@ function EditableCard({
             </button>
           </div>
 
-          {/* Type selector */}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-muted-foreground">Tipo de dia</label>
             <div className="grid grid-cols-3 gap-1.5">
@@ -294,7 +292,6 @@ function EditableCard({
             </div>
           )}
 
-          {/* Note field */}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <MessageSquare size={11} /> Observações
@@ -309,7 +306,6 @@ function EditableCard({
             />
           </div>
 
-          {/* Actions */}
           <div className="flex gap-2 justify-end pt-1">
             <button
               onClick={handleCancelEdit}
@@ -461,17 +457,19 @@ export default function Historico() {
   return (
     <div className="space-y-4 pt-1">
       {/* Header row */}
-      <div className="flex items-center justify-between">
-        <h1 className="font-semibold text-lg flex items-center gap-2">
-          <History size={20} className="text-primary" />
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-2xl md:text-lg font-semibold flex items-center gap-2">
+          <History size={20} className="text-primary flex-shrink-0" />
           Histórico
         </h1>
         <button
           data-testid="button-export"
           onClick={handleExport}
-          className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl bg-card border border-card-border hover:bg-accent transition shadow-sm"
+          className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl bg-card border border-card-border hover:bg-accent transition shadow-sm flex-shrink-0"
         >
-          <Download size={14} /> Exportar CSV
+          <Download size={14} />
+          <span className="hidden sm:inline">Exportar CSV</span>
+          <span className="sm:hidden">CSV</span>
         </button>
       </div>
 
@@ -527,7 +525,8 @@ export default function Historico() {
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="bg-card border border-card-border rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between">
+          {/* Bulk actions bar */}
+          <div className="bg-card border border-card-border rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between gap-2 flex-wrap">
             <label className="flex items-center gap-2 text-sm text-muted-foreground select-none">
               <input
                 ref={selectAllRef}
@@ -547,7 +546,7 @@ export default function Historico() {
                 className="flex items-center gap-2 px-3 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:opacity-90 active:opacity-80 transition disabled:opacity-60 shadow-sm"
               >
                 {deleteBulk.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                Excluir Selecionados ({selectedCount})
+                <span>Excluir ({selectedCount})</span>
               </button>
             )}
           </div>

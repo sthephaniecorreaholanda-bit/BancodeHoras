@@ -89,8 +89,8 @@ export default function Configuracoes() {
 
   return (
     <div className="space-y-5 pt-1">
-      <h1 className="font-semibold text-lg flex items-center gap-2">
-        <Settings2 size={20} className="text-primary" />
+      <h1 className="text-2xl md:text-lg font-semibold flex items-center gap-2">
+        <Settings2 size={20} className="text-primary flex-shrink-0" />
         Configurações da Jornada
       </h1>
 
@@ -130,7 +130,7 @@ export default function Configuracoes() {
         {/* Lunch break */}
         <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-3">
           <div className="flex items-center gap-2">
-            <UtensilsCrossed size={15} className="text-primary" />
+            <UtensilsCrossed size={15} className="text-primary flex-shrink-0" />
             <div>
               <h2 className="font-semibold text-sm">Tempo de Almoço</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -203,9 +203,9 @@ export default function Configuracoes() {
 
         {/* Goal */}
         <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Target size={15} className="text-primary" />
+              <Target size={15} className="text-primary flex-shrink-0" />
               <div>
                 <h2 className="font-semibold text-sm">Meta de Saldo</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -217,7 +217,7 @@ export default function Configuracoes() {
               type="button"
               onClick={() => setGoalEnabled((v) => !v)}
               className={cn(
-                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0",
                 goalEnabled ? "bg-primary" : "bg-muted-foreground/30"
               )}
             >

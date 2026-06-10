@@ -52,8 +52,6 @@ export default function Anual() {
   const [year, setYear] = useState(now.getFullYear());
   const { data: evolutionData, isLoading } = useGetMonthlyEvolution();
 
-  // Build a map of label → cumulative from the API
-  // Labels look like "Jan/2026", "Fev/2026", etc.
   const allCumulative: Record<string, number> = {};
   if (evolutionData) {
     for (const entry of evolutionData) {
@@ -61,8 +59,6 @@ export default function Anual() {
     }
   }
 
-  // For each month of the selected year, compute the per-month balance
-  // as cumulative[month] - cumulative[prev month], handling year boundaries.
   const months = MONTH_NAMES.map((shortName, idx) => {
     const label = `${shortName}/${year}`;
     const hasData = label in allCumulative;
@@ -73,21 +69,17 @@ export default function Anual() {
 
     const cumulative = allCumulative[label];
 
-    // Find the previous month's cumulative (could be in prev year)
     let prevCumulative = 0;
     if (idx === 0) {
-      // January — look for Dec of previous year
       const prevLabel = `Dez/${year - 1}`;
       if (prevLabel in allCumulative) {
         prevCumulative = allCumulative[prevLabel];
       }
-      // else it's the very first month in the dataset → balance = cumulative
     } else {
       const prevLabel = `${MONTH_NAMES[idx - 1]}/${year}`;
       if (prevLabel in allCumulative) {
         prevCumulative = allCumulative[prevLabel];
       } else {
-        // gap month — find last known cumulative before this month in this year
         for (let i = idx - 1; i >= 0; i--) {
           const candidateLabel = `${MONTH_NAMES[i]}/${year}`;
           if (candidateLabel in allCumulative) {
@@ -95,7 +87,6 @@ export default function Anual() {
             break;
           }
         }
-        // if still not found, try previous year's Dec
         if (prevCumulative === 0) {
           const prevLabel = `Dez/${year - 1}`;
           if (prevLabel in allCumulative) {
@@ -110,15 +101,10 @@ export default function Anual() {
 
   const hasAnyData = months.some((m) => m.balance !== null);
 
-  // Cumulative line data (for the summary cards)
-  const lastMonthWithData = [...months].reverse().find((m) => m.balance !== null);
   const yearTotal = months.reduce<number>((sum, m) => sum + (m.balance ?? 0), 0);
-
-  // Summary stats
   const positiveMonths = months.filter((m) => (m.balance ?? 0) > 0).length;
   const negativeMonths = months.filter((m) => (m.balance ?? 0) < 0).length;
 
-  // Chart data — replace null with 0 for rendering but mark visually
   const chartData = months.map((m) => ({
     label: m.label,
     balance: m.balance ?? 0,
@@ -128,14 +114,14 @@ export default function Anual() {
   return (
     <div className="space-y-5 pt-1">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="font-semibold text-lg flex items-center gap-2">
-          <BarChart2 size={20} className="text-primary" />
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-2xl md:text-lg font-semibold flex items-center gap-2">
+          <BarChart2 size={20} className="text-primary flex-shrink-0" />
           Relatório Anual
         </h1>
 
         {/* Year picker */}
-        <div className="flex items-center gap-1 bg-card border border-card-border rounded-xl px-2 py-1 shadow-sm">
+        <div className="flex items-center gap-1 bg-card border border-card-border rounded-xl px-2 py-1 shadow-sm flex-shrink-0">
           <button
             onClick={() => setYear((y) => y - 1)}
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-accent transition text-muted-foreground hover:text-foreground"
@@ -152,9 +138,9 @@ export default function Anual() {
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards — 1 column on mobile, 3 on sm+ */}
       {hasAnyData && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="bg-card border border-card-border rounded-2xl p-4 shadow-sm text-center">
             <p className="text-xs text-muted-foreground mb-1">Saldo do Ano</p>
             <p className={cn("text-xl font-bold tabular-nums", getBalanceColor(yearTotal))}>
@@ -173,23 +159,23 @@ export default function Anual() {
       )}
 
       {/* Bar chart */}
-      <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
+      <div className="bg-card border border-card-border rounded-2xl p-4 sm:p-5 shadow-sm">
         <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-4">
           Saldo por Mês — {year}
         </h3>
 
         {isLoading ? (
-          <div className="h-56 flex items-center justify-center">
+          <div className="h-44 sm:h-56 flex items-center justify-center">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
         ) : !hasAnyData ? (
-          <div className="h-56 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+          <div className="h-44 sm:h-56 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <BarChart2 size={36} className="opacity-30" />
             <p className="text-sm">Nenhum registro em {year}</p>
             <p className="text-xs opacity-60">Navegue para outro ano ou registre pontos primeiro</p>
           </div>
         ) : (
-          <div className="h-56">
+          <div className="h-44 sm:h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={chartData}
@@ -204,7 +190,7 @@ export default function Anual() {
                 />
                 <XAxis
                   dataKey="label"
-                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                   axisLine={false}
                   tickLine={false}
                 />
@@ -243,30 +229,32 @@ export default function Anual() {
       {/* Monthly breakdown table */}
       {hasAnyData && (
         <div className="bg-card border border-card-border rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-card-border">
+          <div className="px-4 sm:px-5 py-3 border-b border-card-border">
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
               Detalhamento Mensal
             </h3>
           </div>
-          <div className="divide-y divide-card-border">
-            {months.map((m, idx) => {
-              if (m.balance === null) return null;
-              return (
-                <div key={m.label} className="flex items-center justify-between px-5 py-3">
-                  <span className="text-sm font-medium">
-                    {MONTH_NAMES_FULL[idx]} {year}
-                  </span>
-                  <span
-                    className={cn(
-                      "text-sm font-bold tabular-nums",
-                      getBalanceColor(m.balance)
-                    )}
-                  >
-                    {formatMinutes(m.balance)}
-                  </span>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto">
+            <div className="divide-y divide-card-border min-w-[280px]">
+              {months.map((m, idx) => {
+                if (m.balance === null) return null;
+                return (
+                  <div key={m.label} className="flex items-center justify-between px-4 sm:px-5 py-3">
+                    <span className="text-sm font-medium">
+                      {MONTH_NAMES_FULL[idx]} {year}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-sm font-bold tabular-nums",
+                        getBalanceColor(m.balance)
+                      )}
+                    >
+                      {formatMinutes(m.balance)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

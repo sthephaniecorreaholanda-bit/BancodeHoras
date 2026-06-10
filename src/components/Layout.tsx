@@ -20,12 +20,12 @@ import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabaseClient";
 
 const navItems = [
-  { href: "/", icon: LayoutDashboard, label: "Painel de Resumo", exact: true },
-  { href: "/registrar", icon: ClipboardEdit, label: "Registrar Ponto", exact: false },
-  { href: "/historico", icon: History, label: "Histórico", exact: false },
-  { href: "/anual", icon: BarChart2, label: "Relatório Anual", exact: false },
-  { href: "/personalizacao", icon: Palette, label: "Personalização", exact: false },
-  { href: "/configuracoes", icon: Settings, label: "Configurações", exact: false },
+  { href: "/", icon: LayoutDashboard, label: "Painel de Resumo", shortLabel: "Painel", exact: true },
+  { href: "/registrar", icon: ClipboardEdit, label: "Registrar Ponto", shortLabel: "Registrar", exact: false },
+  { href: "/historico", icon: History, label: "Histórico", shortLabel: "Histórico", exact: false },
+  { href: "/anual", icon: BarChart2, label: "Relatório Anual", shortLabel: "Anual", exact: false },
+  { href: "/personalizacao", icon: Palette, label: "Personalização", shortLabel: "Cores", exact: false },
+  { href: "/configuracoes", icon: Settings, label: "Configurações", shortLabel: "Config", exact: false },
 ];
 
 function EmailConfirmationBanner({ email }: { email: string }) {
@@ -45,7 +45,7 @@ function EmailConfirmationBanner({ email }: { email: string }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-sm">
       <MailWarning size={16} className="flex-shrink-0" />
-      <span className="flex-1">
+      <span className="flex-1 text-xs sm:text-sm">
         {resent
           ? "E-mail de confirmação reenviado! Verifique sua caixa de entrada."
           : "Confirme seu e-mail para garantir acesso contínuo à sua conta."}
@@ -70,6 +70,32 @@ function EmailConfirmationBanner({ email }: { email: string }) {
   );
 }
 
+function BottomNav({ onLogout }: { onLogout?: () => void }) {
+  const [location] = useLocation();
+  const { theme, toggleTheme } = useTheme();
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border flex items-stretch h-16 safe-bottom">
+      {navItems.map(({ href, icon: Icon, shortLabel, exact }) => {
+        const active = exact ? location === "/" : location.startsWith(href);
+        return (
+          <Link
+            key={href}
+            href={href}
+            className={cn(
+              "flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors",
+              active ? "text-primary" : "text-muted-foreground"
+            )}
+          >
+            <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+            <span className="leading-none">{shortLabel}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function Layout({
   children,
   onLogout,
@@ -85,17 +111,17 @@ export function Layout({
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Fixed left sidebar */}
-      <aside className="fixed top-0 left-0 h-full z-40 flex flex-col bg-card border-r border-border w-14 sm:w-56 transition-all">
+      {/* Fixed left sidebar — desktop only */}
+      <aside className="hidden md:flex fixed top-0 left-0 h-full z-40 flex-col bg-card border-r border-border w-56 transition-all">
         {/* Logo */}
-        <div className="h-14 flex items-center gap-3 px-3 sm:px-4 border-b border-border flex-shrink-0">
+        <div className="h-14 flex items-center gap-3 px-4 border-b border-border flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
             <Clock className="text-primary-foreground" size={17} />
           </div>
-          <div className="hidden sm:flex flex-col leading-tight">
+          <div className="flex flex-col leading-tight">
             <span className="font-semibold text-sm tracking-tight">Banco de Horas</span>
             {currentUser && (
-              <span className="text-[11px] text-muted-foreground truncate">
+              <span className="text-[11px] text-muted-foreground truncate max-w-[160px]">
                 {currentUser}
               </span>
             )}
@@ -123,7 +149,7 @@ export function Layout({
                   strokeWidth={active ? 2.5 : 2}
                   className="flex-shrink-0"
                 />
-                <span className="hidden sm:block leading-none">{label}</span>
+                <span className="leading-none">{label}</span>
               </Link>
             );
           })}
@@ -142,7 +168,7 @@ export function Layout({
             ) : (
               <Moon size={19} strokeWidth={2} className="flex-shrink-0" />
             )}
-            <span className="hidden sm:block">{theme === "dark" ? "Modo Claro" : "Modo Escuro"}</span>
+            <span>{theme === "dark" ? "Modo Claro" : "Modo Escuro"}</span>
           </button>
           {onLogout && (
             <button
@@ -152,19 +178,24 @@ export function Layout({
               aria-label="Sair"
             >
               <LogOut size={19} strokeWidth={2} className="flex-shrink-0" />
-              <span className="hidden sm:block">Sair</span>
+              <span>Sair</span>
             </button>
           )}
         </div>
       </aside>
 
-      {/* Main content — offset for sidebar */}
-      <main className="flex-1 ml-14 sm:ml-56 min-h-screen flex flex-col">
+      {/* Main content — full width on mobile, offset on desktop */}
+      <main className="flex-1 ml-0 md:ml-56 min-h-screen flex flex-col">
         {emailUnconfirmed && user.email && (
           <EmailConfirmationBanner email={user.email} />
         )}
-        <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">{children}</div>
+        <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
+          {children}
+        </div>
       </main>
+
+      {/* Bottom navigation — mobile only */}
+      <BottomNav onLogout={onLogout} />
     </div>
   );
 }

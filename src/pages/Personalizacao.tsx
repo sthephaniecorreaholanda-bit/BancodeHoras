@@ -6,8 +6,8 @@ export default function Personalizacao() {
 
   return (
     <div className="space-y-5">
-      <h1 className="font-semibold text-lg flex items-center gap-2">
-        <Palette size={20} className="text-primary" />
+      <h1 className="text-2xl md:text-lg font-semibold flex items-center gap-2">
+        <Palette size={20} className="text-primary flex-shrink-0" />
         Personalização
       </h1>
 

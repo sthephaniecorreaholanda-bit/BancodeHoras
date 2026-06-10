@@ -45,7 +45,6 @@ function CustomTooltip({
   );
 }
 
-// Month picker shared between both views
 function MonthPicker({
   month,
   year,
@@ -84,13 +83,12 @@ function MonthPicker({
   );
 }
 
-// Day-by-day cumulative line chart for the selected month
 function DailyChart({ month, year }: { month: number; year: number }) {
   const { data: records, isLoading } = useListRecords({ month, year });
 
   if (isLoading) {
     return (
-      <div className="h-48 flex items-center justify-center">
+      <div className="h-36 sm:h-48 flex items-center justify-center">
         <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -98,22 +96,20 @@ function DailyChart({ month, year }: { month: number; year: number }) {
 
   if (!records || records.length === 0) {
     return (
-      <div className="h-48 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <div className="h-36 sm:h-48 flex flex-col items-center justify-center gap-2 text-muted-foreground">
         <TrendingUp size={28} className="opacity-40" />
         <p className="text-sm">Nenhum registro em {MONTHS[month - 1]}</p>
       </div>
     );
   }
 
-  // Sort ascending by date
   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
 
-  // Build cumulative series
   let cumulative = 0;
   const chartData = sorted.map((r) => {
     cumulative += r.balanceMinutes;
-    const day = r.date.slice(8, 10); // "05"
-    const mon = r.date.slice(5, 7);  // "05"
+    const day = r.date.slice(8, 10);
+    const mon = r.date.slice(5, 7);
     return {
       label: `${day}/${mon}`,
       saldo: cumulative,
@@ -121,7 +117,7 @@ function DailyChart({ month, year }: { month: number; year: number }) {
   });
 
   return (
-    <div className="h-48">
+    <div className="h-36 sm:h-48">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
@@ -155,13 +151,12 @@ function DailyChart({ month, year }: { month: number; year: number }) {
   );
 }
 
-// Weekly bar chart: one bar per week of the selected month (cumulative within month)
 function WeeklyChart({ month, year }: { month: number; year: number }) {
   const { data: records, isLoading } = useListRecords({ month, year });
 
   if (isLoading) {
     return (
-      <div className="h-48 flex items-center justify-center">
+      <div className="h-36 sm:h-48 flex items-center justify-center">
         <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -169,14 +164,13 @@ function WeeklyChart({ month, year }: { month: number; year: number }) {
 
   if (!records || records.length === 0) {
     return (
-      <div className="h-48 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <div className="h-36 sm:h-48 flex flex-col items-center justify-center gap-2 text-muted-foreground">
         <TrendingUp size={28} className="opacity-40" />
         <p className="text-sm">Nenhum registro em {MONTHS[month - 1]}</p>
       </div>
     );
   }
 
-  // Group by week-of-month (days 1-7 = Sem 1, 8-14 = Sem 2, etc.)
   const weekMap = new Map<number, number>();
   for (const r of records) {
     const day = parseInt(r.date.slice(8, 10));
@@ -192,7 +186,7 @@ function WeeklyChart({ month, year }: { month: number; year: number }) {
   });
 
   return (
-    <div className="h-48">
+    <div className="h-36 sm:h-48">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
@@ -243,13 +237,13 @@ export function EvolutionChart() {
   }
 
   return (
-    <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-4">
+    <div className="bg-card border border-card-border rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
       {/* Header with toggle */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
           Evolução do Saldo
         </h3>
-        <div className="flex rounded-xl overflow-hidden border border-card-border text-xs font-medium">
+        <div className="flex rounded-xl overflow-hidden border border-card-border text-xs font-medium flex-shrink-0">
           <button
             onClick={() => setViewMode("monthly")}
             className={`px-3 py-1.5 transition-colors ${
@@ -273,10 +267,8 @@ export function EvolutionChart() {
         </div>
       </div>
 
-      {/* Month picker — shown for both views */}
       <MonthPicker month={month} year={year} onChange={handleMonthChange} />
 
-      {/* Chart */}
       {viewMode === "monthly" ? (
         <DailyChart month={month} year={year} />
       ) : (

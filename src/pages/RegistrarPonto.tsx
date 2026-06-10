@@ -70,8 +70,8 @@ export default function RegistrarPonto() {
 
   return (
     <div className="space-y-5">
-      <h1 className="font-semibold text-lg flex items-center gap-2">
-        <ClipboardEdit size={20} className="text-primary" />
+      <h1 className="text-2xl md:text-lg font-semibold flex items-center gap-2">
+        <ClipboardEdit size={20} className="text-primary flex-shrink-0" />
         Registrar Ponto
       </h1>
 
@@ -81,7 +81,7 @@ export default function RegistrarPonto() {
             size={16}
             className="text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0"
           />
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="font-medium text-amber-800 dark:text-amber-300">
               {missingDays!.length} dia{missingDays!.length > 1 ? "s" : ""} sem registro
             </p>
@@ -96,15 +96,16 @@ export default function RegistrarPonto() {
           <button
             data-testid="button-dismiss-alert"
             onClick={() => setDismissedAlert(true)}
-            className="text-amber-600 dark:text-amber-400 hover:opacity-70 transition"
+            className="text-amber-600 dark:text-amber-400 hover:opacity-70 transition flex-shrink-0"
           >
             <X size={16} />
           </button>
         </div>
       )}
 
-      <div className="bg-card border border-card-border rounded-2xl p-4 shadow-sm flex items-center gap-4">
-        <div className="flex-1">
+      {/* Gerar Mês Padrão — stacks vertically on mobile, row on sm+ */}
+      <div className="bg-card border border-card-border rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Gerar Mês Padrão</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Preenche todos os dias úteis de{" "}
@@ -116,14 +117,14 @@ export default function RegistrarPonto() {
           data-testid="button-bulk-generate"
           onClick={handleBulkGenerate}
           disabled={bulkGenerate.isPending}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 active:opacity-80 transition disabled:opacity-60 shadow-sm flex-shrink-0"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 active:opacity-80 transition disabled:opacity-60 shadow-sm flex-shrink-0"
         >
           {bulkGenerate.isPending ? (
             <Loader2 size={15} className="animate-spin" />
           ) : (
             <CalendarCheck size={15} />
           )}
-          Gerar
+          Gerar Mês
         </button>
       </div>
 
