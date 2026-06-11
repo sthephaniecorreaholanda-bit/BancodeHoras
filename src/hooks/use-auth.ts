@@ -66,7 +66,25 @@ export function useAuth(): AuthState {
       }
     );
 
-    return () => subscription.unsubscribe();
+    // When the user confirms their email in another tab/window, the JWT in
+    // localStorage is updated but email_confirmed_at isn't always reflected
+    // in the in-memory user object. On tab focus we call getUser() which hits
+    // the Supabase server and returns the freshest user profile, causing the
+    // confirmation banner to disappear without a manual page reload.
+    async function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      const { data: { user: freshUser } } = await supabase.auth.getUser();
+      if (freshUser) {
+        setUser(freshUser);
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   return { user, session, loading, isPasswordRecovery };
