@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -17,7 +17,7 @@ import {
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase, getSiteUrl } from "@/lib/supabaseClient";
 
 const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Painel de Resumo", shortLabel: "Painel", exact: true },
@@ -28,40 +28,81 @@ const navItems = [
   { href: "/configuracoes", icon: Settings, label: "Configurações", shortLabel: "Config", exact: false },
 ];
 
+const RESEND_COOLDOWN_SECS = 60;
+
 function EmailConfirmationBanner({ email }: { email: string }) {
   const [dismissed, setDismissed] = useState(false);
   const [resent, setResent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) { clearInterval(timer); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   if (dismissed) return null;
 
   async function handleResend() {
     setSending(true);
-    await supabase.auth.resend({ type: "signup", email });
-    setSending(false);
-    setResent(true);
+    setError("");
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: {
+          // Always redirect back to the correct production URL after confirmation
+          emailRedirectTo: getSiteUrl(),
+        },
+      });
+      if (resendError) throw resendError;
+      setResent(true);
+      setCooldown(RESEND_COOLDOWN_SECS);
+    } catch (err: any) {
+      setError(err?.message ?? "Erro ao reenviar. Tente novamente.");
+    } finally {
+      setSending(false);
+    }
   }
 
+  const btnDisabled = sending || cooldown > 0;
+
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-sm">
-      <MailWarning size={16} className="flex-shrink-0" />
-      <span className="flex-1 text-xs sm:text-sm">
-        {resent
-          ? "E-mail de confirmação reenviado! Verifique sua caixa de entrada."
-          : "Confirme seu e-mail para garantir acesso contínuo à sua conta."}
-      </span>
+    <div className="flex items-start gap-3 px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300">
+      <MailWarning size={16} className="flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0 text-xs sm:text-sm space-y-0.5">
+        <span>
+          {resent
+            ? "✓ E-mail de confirmação reenviado! Verifique sua caixa de entrada."
+            : "Confirme seu e-mail para garantir acesso contínuo à sua conta."}
+        </span>
+        {error && (
+          <p className="text-red-600 dark:text-red-400 font-medium">{error}</p>
+        )}
+      </div>
       {!resent && (
         <button
           onClick={handleResend}
-          disabled={sending}
-          className="flex-shrink-0 text-xs font-semibold underline underline-offset-2 hover:opacity-70 disabled:opacity-50 transition-opacity"
+          disabled={btnDisabled}
+          className="flex-shrink-0 text-xs font-semibold underline underline-offset-2 hover:opacity-70 disabled:opacity-40 disabled:no-underline transition-opacity whitespace-nowrap mt-0.5"
         >
-          {sending ? "Enviando..." : "Reenviar e-mail"}
+          {sending
+            ? "Enviando…"
+            : cooldown > 0
+            ? `Reenviar (${cooldown}s)`
+            : "Reenviar e-mail"}
         </button>
       )}
       <button
         onClick={() => setDismissed(true)}
-        className="flex-shrink-0 hover:opacity-70 transition-opacity"
+        className="flex-shrink-0 hover:opacity-70 transition-opacity mt-0.5"
         aria-label="Fechar aviso"
       >
         <X size={15} />
