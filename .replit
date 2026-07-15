@@ -34,6 +34,10 @@ outputType = "webview"
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 5001
+externalPort = 3001
+
 [deployment]
 deploymentTarget = "static"
 build = ["npm", "run", "build"]
@@ -43,4 +47,4 @@ publicDir = "dist"
 
 [userenv.shared]
 VITE_SUPABASE_URL = "https://aexrustxvswbmawlvjam.supabase.co"
-VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFleHJ1c3R4dnN3Ym1hd2x2amFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5NTQzNzEsImV4cCI6MjA5NTUzMDM3MX0.bGPdoeVl_p6OjGrL6XQQ-sA9Ugv59LuGYr7H03HSORA"
+VITE_SUPABASE_ANON_KEY = "sb_publishable_kEV27Zw8RMS3noFhgt8EDw_67YJZmNI"
