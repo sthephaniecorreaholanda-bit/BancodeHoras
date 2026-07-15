@@ -112,22 +112,30 @@ function TelaAuth() {
       const siteUrl = getSiteUrl();
 
       if (view === "register") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            // Override the Supabase dashboard "Site URL" so the confirmation
-            // email always points to the correct production URL.
             emailRedirectTo: siteUrl,
           },
         });
         if (error) throw error;
-        setMessage({
-          text: "Conta criada! Verifique seu e-mail para confirmar o cadastro.",
-          isError: false,
-        });
-        setView("login");
-        setPassword("");
+        if (data.session) {
+          // Email confirmation disabled — already logged in
+          if (rememberMe) {
+            localStorage.removeItem(NO_REMEMBER_KEY);
+          } else {
+            localStorage.setItem(NO_REMEMBER_KEY, "1");
+          }
+          sessionStorage.setItem(SESSION_ACTIVE_KEY, "1");
+        } else {
+          setMessage({
+            text: "Conta criada! Verifique seu e-mail para confirmar o cadastro.",
+            isError: false,
+          });
+          setView("login");
+          setPassword("");
+        }
       } else if (view === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
