@@ -1,5 +1,23 @@
 export type RecordType = "WORK_DAY" | "COMPENSATED_LEAVE" | "HOLIDAY";
 
+export type AdjustmentType = "CREDIT" | "DEBIT";
+
+export type ManualAdjustment = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  type: AdjustmentType;
+  minutes: number; // always positive; sign derived from type
+  reason: string | null;
+  createdAt: string;
+};
+
+export type ManualAdjustmentInput = {
+  date: string;
+  type: AdjustmentType;
+  minutes: number;
+  reason?: string | null;
+};
+
 export type TimeRecord = {
   id: number;
   date: string;

@@ -1,5 +1,6 @@
 import { isHoliday, isSunday, isWorkday } from "./holidays";
 import type {
+  ManualAdjustment,
   MissingDay,
   MonthlyEvolution,
   Settings,
@@ -73,6 +74,7 @@ export function computeBalanceForRecord(
 export function computeSummary(
   records: TimeRecord[],
   settings: Settings,
+  adjustments: ManualAdjustment[] = [],
 ): Summary {
   let totalBalance = 0;
   let daysWorked = 0;
@@ -86,14 +88,22 @@ export function computeSummary(
     else if (r.type === "HOLIDAY") holidays += 1;
   }
 
+  // Legacy single-value adjustment (backward compatibility)
   totalBalance += settings.manualAdjustmentMinutes;
+
+  // Transaction-based adjustments
+  const adjTotal = adjustments.reduce(
+    (s, a) => s + (a.type === "CREDIT" ? a.minutes : -a.minutes),
+    0,
+  );
+  totalBalance += adjTotal;
 
   return {
     totalBalanceMinutes: totalBalance,
     daysWorked,
     compensatedLeaves,
     holidays,
-    manualAdjustmentMinutes: settings.manualAdjustmentMinutes,
+    manualAdjustmentMinutes: settings.manualAdjustmentMinutes + adjTotal,
   };
 }
 
@@ -121,8 +131,10 @@ function byDateAsc(a: TimeRecord, b: TimeRecord): number {
 
 export function computeMonthlyEvolution(
   records: TimeRecord[],
+  adjustments: ManualAdjustment[] = [],
 ): MonthlyEvolution[] {
   const byMonth = new Map<string, { year: number; month: number; total: number }>();
+
   for (const r of records) {
     const [yStr, mStr] = r.date.split("-");
     const y = Number(yStr);
@@ -131,6 +143,18 @@ export function computeMonthlyEvolution(
     const acc = byMonth.get(key);
     if (acc) acc.total += r.balanceMinutes;
     else byMonth.set(key, { year: y, month: m, total: r.balanceMinutes });
+  }
+
+  // Include transaction-based adjustments in monthly totals
+  for (const adj of adjustments) {
+    const [yStr, mStr] = adj.date.split("-");
+    const y = Number(yStr);
+    const m = Number(mStr);
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    const signed = adj.type === "CREDIT" ? adj.minutes : -adj.minutes;
+    const acc = byMonth.get(key);
+    if (acc) acc.total += signed;
+    else byMonth.set(key, { year: y, month: m, total: signed });
   }
 
   const sorted = Array.from(byMonth.values()).sort((a, b) =>
@@ -168,7 +192,10 @@ export function computeMissingDays(records: TimeRecord[]): MissingDay[] {
   return result.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function recordsToCsv(records: TimeRecord[]): string {
+export function recordsToCsv(
+  records: TimeRecord[],
+  adjustments: ManualAdjustment[] = [],
+): string {
   const header = [
     "Data",
     "Tipo",
@@ -180,7 +207,7 @@ export function recordsToCsv(records: TimeRecord[]): string {
   ].join(";");
 
   const sorted = [...records].sort(byDateAsc);
-  const lines = sorted.map((r) =>
+  const recordLines = sorted.map((r) =>
     [
       r.date,
       r.type,
@@ -192,7 +219,21 @@ export function recordsToCsv(records: TimeRecord[]): string {
     ].join(";"),
   );
 
-  return [header, ...lines].join("\n");
+  const adjLines = [...adjustments]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((a) =>
+      [
+        a.date,
+        a.type === "CREDIT" ? "AJUSTE_CREDITO" : "AJUSTE_DEBITO",
+        "",
+        "",
+        "",
+        String(a.type === "CREDIT" ? a.minutes : -a.minutes),
+        (a.reason ?? "").replace(/[\r\n;]+/g, " "),
+      ].join(";"),
+    );
+
+  return [header, ...recordLines, ...adjLines].join("\n");
 }
 
 export function defaultExportFilename(): string {

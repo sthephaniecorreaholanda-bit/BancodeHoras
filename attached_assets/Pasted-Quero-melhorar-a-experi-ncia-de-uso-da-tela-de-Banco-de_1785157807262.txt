@@ -1,0 +1,102 @@
+Quero melhorar a experiência de uso da tela de Banco de Horas e corrigir algumas inconsistências de UX. Faça as seguintes alterações:
+
+1. Ajuste Manual
+
+Não quero que o ajuste manual funcione como uma configuração permanente.
+
+Hoje ele fica armazenando um valor (ex.: +05:13) e exibindo "Valor atual". Isso passa a impressão de que é uma configuração fixa.
+
+Quero que funcione como um lançamento.
+
+Novo comportamento
+O usuário escolhe se é Crédito ou Débito.
+Informa a quantidade de horas/minutos.
+Opcionalmente informa um motivo.
+Clica em Registrar Ajuste.
+O sistema aplica imediatamente o ajuste ao banco de horas.
+O formulário é limpo após o lançamento.
+O ajuste fica salvo apenas no histórico de movimentações.
+Não deve existir mais a informação "Valor atual".
+2. Histórico
+
+Cada ajuste manual deve gerar um registro contendo:
+
+data e hora
+tipo (Crédito ou Débito)
+quantidade
+motivo (quando informado)
+
+Exemplo:
+
+29/07/2026
+Crédito manual
++05:13
+Motivo: Acerto do mês anterior
+
+3. Gráfico do Banco de Horas
+
+Hoje existe uma inconsistência.
+
+O topo mostra:
+
+Saldo Total Acumulado = +01:47
+
+Mas o gráfico termina em:
+
+Saldo Atual = -03:26
+
+Isso confunde o usuário.
+
+Quero que o gráfico represente o saldo real do banco, considerando também os ajustes manuais.
+
+Ou seja:
+
+quando existir um ajuste manual, ele deve alterar a linha do gráfico;
+o último ponto do gráfico deve ser exatamente igual ao "Saldo Total Acumulado".
+4. Tooltip do gráfico
+
+O tooltip também precisa refletir isso.
+
+Além das horas do dia, ele deve mostrar:
+
+Saldo total até aquele dia
+Horas trabalhadas
+Crédito/Débito do dia
+Caso exista ajuste manual naquele dia, exibir:
+Ajuste manual +05:13
+ou Ajuste manual -02:00
+5. Cards
+
+Alterar os nomes para evitar confusão.
+
+Em vez de:
+
+Saldo Atual
+
+usar:
+
+Saldo do Período
+
+ou
+
+Saldo Operacional
+
+Já o card superior continua sendo:
+
+Saldo Total Acumulado
+
+Assim fica claro que um representa apenas o período e o outro representa o banco de horas completo.
+
+6. UX
+
+Quero que o sistema tenha comportamento semelhante a um sistema financeiro:
+
+cada crédito gera uma movimentação;
+cada débito gera uma movimentação;
+nada deve ficar salvo como "configuração permanente";
+todo ajuste deve ser rastreável pelo histórico.
+7. Manter compatibilidade
+
+Essas alterações não devem quebrar os cálculos atuais.
+
+Apenas mudar a forma como os ajustes são registrados e como o saldo é apresentado, mantendo toda a lógica de cálculo existente.

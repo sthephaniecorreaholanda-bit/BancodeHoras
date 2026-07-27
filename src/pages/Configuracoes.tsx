@@ -4,13 +4,35 @@ import {
   useGetSettings,
   useUpdateSettings,
   useDeleteAccount,
+  useCreateAdjustment,
+  useListAdjustments,
+  useDeleteAdjustment,
   getGetSettingsQueryKey,
   getGetSummaryQueryKey,
 } from "@/lib/api-local";
-import { hhmmToMinutes, minutesToHHMM, formatMinutes } from "@/lib/time";
-import { Settings2, Info, Loader2, Save, UtensilsCrossed, Target, Trash2, AlertTriangle } from "lucide-react";
+import {
+  hhmmToMinutes,
+  minutesToHHMM,
+  formatMinutes,
+  formatDate,
+} from "@/lib/time";
+import {
+  Settings2,
+  Info,
+  Loader2,
+  Save,
+  UtensilsCrossed,
+  Target,
+  Trash2,
+  AlertTriangle,
+  SlidersHorizontal,
+  Check,
+  Calendar,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { todayISO } from "@/lib/time";
+import type { AdjustmentType } from "@/lib/types";
 
 // ─── Delete Account Modal ─────────────────────────────────────────────────
 
@@ -29,7 +51,6 @@ function ModalExcluirConta({ onClose }: { onClose: () => void }) {
     if (!confirmed) return;
     try {
       await deleteAccount.mutateAsync();
-      // useAuth will detect sign-out and redirect to login automatically
     } catch (err: any) {
       toast({
         title: "Erro ao excluir conta",
@@ -45,7 +66,6 @@ function ModalExcluirConta({ onClose }: { onClose: () => void }) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
     >
       <div className="bg-card border border-card-border rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
-        {/* Header */}
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
             <AlertTriangle size={20} className="text-destructive" />
@@ -56,7 +76,6 @@ function ModalExcluirConta({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {/* Warning box */}
         <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-2 text-sm">
           <p className="font-semibold text-destructive uppercase tracking-wide text-xs">⚠️ ATENÇÃO</p>
           <p className="font-semibold text-foreground">Esta ação é irreversível.</p>
@@ -71,7 +90,6 @@ function ModalExcluirConta({ onClose }: { onClose: () => void }) {
           </ul>
         </div>
 
-        {/* Confirmation input */}
         <div className="space-y-2">
           <label className="text-xs font-medium text-muted-foreground">
             Digite <span className="font-mono font-bold text-destructive">EXCLUIR</span> para confirmar:
@@ -86,7 +104,6 @@ function ModalExcluirConta({ onClose }: { onClose: () => void }) {
           />
         </div>
 
-        {/* Actions */}
         <div className="flex gap-2 pt-1">
           <button
             onClick={onClose}
@@ -101,19 +118,188 @@ function ModalExcluirConta({ onClose }: { onClose: () => void }) {
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {deleteAccount.isPending ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                Excluindo...
-              </>
+              <><Loader2 size={14} className="animate-spin" />Excluindo...</>
             ) : (
-              <>
-                <Trash2 size={14} />
-                Excluir Conta
-              </>
+              <><Trash2 size={14} />Excluir Conta</>
             )}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Register Adjustment Card ─────────────────────────────────────────────
+
+function RegisterAdjustmentCard() {
+  const [adjType, setAdjType] = useState<AdjustmentType>("CREDIT");
+  const [adjDate, setAdjDate] = useState(todayISO());
+  const [adjHHMM, setAdjHHMM] = useState("00:00");
+  const [adjReason, setAdjReason] = useState("");
+  const createAdjustment = useCreateAdjustment();
+  const { data: adjustments } = useListAdjustments();
+  const deleteAdjustment = useDeleteAdjustment();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const minutes = hhmmToMinutes(adjHHMM);
+    if (minutes <= 0) {
+      toast({ title: "Informe uma quantidade maior que zero", variant: "destructive" });
+      return;
+    }
+    createAdjustment.mutate(
+      { data: { date: adjDate, type: adjType, minutes, reason: adjReason.trim() || null } },
+      {
+        onSuccess: () => {
+          toast({ title: adjType === "CREDIT" ? "Crédito registrado" : "Débito registrado" });
+          setAdjHHMM("00:00");
+          setAdjReason("");
+          qc.invalidateQueries({ queryKey: getGetSummaryQueryKey() });
+        },
+        onError: () => toast({ title: "Erro ao registrar ajuste", variant: "destructive" }),
+      },
+    );
+  }
+
+  return (
+    <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-4">
+      <div>
+        <h2 className="font-semibold text-sm flex items-center gap-2">
+          <SlidersHorizontal size={14} className="text-primary flex-shrink-0" />
+          Registrar Ajuste Manual
+        </h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Cada ajuste vira um lançamento rastreável no histórico de movimentações.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Tipo */}
+        <div className="grid grid-cols-2 gap-2">
+          {(["CREDIT", "DEBIT"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setAdjType(t)}
+              className={cn(
+                "px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-center",
+                adjType === t
+                  ? t === "CREDIT"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-destructive bg-destructive/10 text-destructive"
+                  : "border-card-border text-muted-foreground hover:border-muted-foreground/40 bg-background",
+              )}
+            >
+              {t === "CREDIT" ? "+ Crédito" : "− Débito"}
+            </button>
+          ))}
+        </div>
+
+        {/* Data + Quantidade */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <Calendar size={11} /> Data
+            </label>
+            <input
+              type="date"
+              value={adjDate}
+              onChange={(e) => setAdjDate(e.target.value)}
+              required
+              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Quantidade (HH:MM)</label>
+            <input
+              type="time"
+              value={adjHHMM}
+              onChange={(e) => setAdjHHMM(e.target.value)}
+              required
+              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
+            />
+          </div>
+        </div>
+
+        {/* Motivo */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">
+            Motivo <span className="opacity-60">(opcional)</span>
+          </label>
+          <input
+            type="text"
+            value={adjReason}
+            onChange={(e) => setAdjReason(e.target.value)}
+            placeholder="Ex: acerto do mês anterior"
+            maxLength={200}
+            className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={createAdjustment.isPending}
+          className={cn(
+            "w-full py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition disabled:opacity-60",
+            adjType === "CREDIT"
+              ? "bg-primary text-primary-foreground hover:opacity-90 active:opacity-80"
+              : "bg-destructive text-destructive-foreground hover:opacity-90 active:opacity-80",
+          )}
+        >
+          {createAdjustment.isPending ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <Check size={15} />
+          )}
+          Registrar {adjType === "CREDIT" ? "Crédito" : "Débito"}
+        </button>
+      </form>
+
+      {/* Recent adjustments list */}
+      {adjustments && adjustments.length > 0 && (
+        <div className="border-t border-card-border pt-3 space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            Ajustes registrados
+          </p>
+          {[...adjustments].reverse().map((adj) => (
+            <div key={adj.id} className="flex items-center gap-2 text-xs py-1">
+              <span className="font-medium text-foreground shrink-0">{formatDate(adj.date)}</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded-full text-xs font-medium shrink-0",
+                  adj.type === "CREDIT"
+                    ? "bg-primary/10 text-primary"
+                    : "bg-destructive/10 text-destructive",
+                )}
+              >
+                {adj.type === "CREDIT" ? "Crédito" : "Débito"}
+              </span>
+              <span
+                className={cn(
+                  "font-mono font-semibold shrink-0",
+                  adj.type === "CREDIT" ? "text-primary" : "text-destructive",
+                )}
+              >
+                {adj.type === "CREDIT" ? "+" : "−"}{minutesToHHMM(adj.minutes)}
+              </span>
+              {adj.reason && (
+                <span className="text-muted-foreground truncate flex-1 italic">{adj.reason}</span>
+              )}
+              <button
+                type="button"
+                onClick={() => deleteAdjustment.mutate({ id: adj.id })}
+                disabled={deleteAdjustment.isPending}
+                className="ml-auto shrink-0 text-muted-foreground hover:text-destructive transition disabled:opacity-40"
+                title="Excluir ajuste"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -128,8 +314,6 @@ export default function Configuracoes() {
 
   const [entryHHMM, setEntryHHMM] = useState("08:00");
   const [exitHHMM, setExitHHMM] = useState("17:00");
-  const [adjustMinutes, setAdjustMinutes] = useState("0");
-  const [adjustSign, setAdjustSign] = useState<"+" | "-">("+");
   const [lunchHHMM, setLunchHHMM] = useState("01:00");
   const [goalEnabled, setGoalEnabled] = useState(false);
   const [goalSign, setGoalSign] = useState<"+" | "-">("-");
@@ -140,9 +324,6 @@ export default function Configuracoes() {
     if (settings) {
       setEntryHHMM(settings.defaultEntryTime);
       setExitHHMM(settings.defaultExitTime);
-      const adj = settings.manualAdjustmentMinutes;
-      setAdjustSign(adj < 0 ? "-" : "+");
-      setAdjustMinutes(minutesToHHMM(Math.abs(adj)));
       setLunchHHMM(minutesToHHMM(settings.lunchBreakMinutes));
       if (settings.goalMinutes !== null && settings.goalMinutes !== undefined) {
         setGoalEnabled(true);
@@ -158,8 +339,6 @@ export default function Configuracoes() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const rawAdjust = hhmmToMinutes(adjustMinutes);
-    const manualAdjustmentMinutes = adjustSign === "-" ? -rawAdjust : rawAdjust;
     const lunchBreakMinutes = hhmmToMinutes(lunchHHMM);
 
     let goalMinutes: number | null = null;
@@ -173,7 +352,6 @@ export default function Configuracoes() {
         data: {
           defaultEntryTime: entryHHMM,
           defaultExitTime: exitHHMM,
-          manualAdjustmentMinutes,
           lunchBreakMinutes,
           goalMinutes,
         },
@@ -185,7 +363,7 @@ export default function Configuracoes() {
           qc.invalidateQueries({ queryKey: getGetSummaryQueryKey() });
         },
         onError: () => toast({ title: "Erro ao salvar", variant: "destructive" }),
-      }
+      },
     );
   }
 
@@ -279,43 +457,6 @@ export default function Configuracoes() {
             </div>
           </div>
 
-          {/* Manual adjustment */}
-          <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-3">
-            <div>
-              <h2 className="font-semibold text-sm">Ajuste Manual de Saldo</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Use para importar saldo de meses anteriores ou zerar o banco.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <select
-                data-testid="select-adjust-sign"
-                value={adjustSign}
-                onChange={(e) => setAdjustSign(e.target.value as "+" | "-")}
-                className="px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono w-16"
-              >
-                <option value="+">+</option>
-                <option value="-">−</option>
-              </select>
-              <input
-                data-testid="input-adjust-minutes"
-                type="time"
-                value={adjustMinutes}
-                onChange={(e) => setAdjustMinutes(e.target.value)}
-                className="flex-1 px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
-              />
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted rounded-xl px-3 py-2">
-              <Info size={13} className="flex-shrink-0" />
-              <span>
-                Valor atual:{" "}
-                <span className="font-mono font-medium text-foreground">
-                  {formatMinutes(settings?.manualAdjustmentMinutes ?? 0)}
-                </span>
-              </span>
-            </div>
-          </div>
-
           {/* Goal */}
           <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-3">
             <div className="flex items-center justify-between gap-2">
@@ -333,13 +474,13 @@ export default function Configuracoes() {
                 onClick={() => setGoalEnabled((v) => !v)}
                 className={cn(
                   "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0",
-                  goalEnabled ? "bg-primary" : "bg-muted-foreground/30"
+                  goalEnabled ? "bg-primary" : "bg-muted-foreground/30",
                 )}
               >
                 <span
                   className={cn(
                     "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
-                    goalEnabled ? "translate-x-6" : "translate-x-1"
+                    goalEnabled ? "translate-x-6" : "translate-x-1",
                   )}
                 />
               </button>
@@ -405,7 +546,10 @@ export default function Configuracoes() {
           </button>
         </form>
 
-        {/* Danger zone — Delete Account */}
+        {/* Manual Adjustment — standalone section */}
+        <RegisterAdjustmentCard />
+
+        {/* Danger zone */}
         <div className="border border-destructive/30 rounded-2xl overflow-hidden">
           <div className="bg-destructive/5 px-5 py-3 border-b border-destructive/20">
             <h3 className="font-semibold text-sm text-destructive">Zona de Perigo</h3>

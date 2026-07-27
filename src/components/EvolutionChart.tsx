@@ -1,5 +1,10 @@
 import { useState, useMemo } from "react";
-import { useListRecords } from "@/lib/api-local";
+import {
+  useListRecords,
+  useListAdjustments,
+  useGetMonthlyEvolution,
+  useGetSettings,
+} from "@/lib/api-local";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -22,6 +27,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { ManualAdjustment } from "@/lib/types";
 
 const MONTHS = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -52,6 +58,7 @@ function AdvancedTooltip({ active, payload }: any) {
     saldo: number;
     workedMinutes: number;
     balanceMinutes: number;
+    adjustmentMinutes?: number;
   };
   if (!d) return null;
 
@@ -64,7 +71,7 @@ function AdvancedTooltip({ active, payload }: any) {
   return (
     <div
       className="rounded-2xl border border-border bg-popover shadow-2xl text-xs"
-      style={{ minWidth: 190, padding: "12px 14px" }}
+      style={{ minWidth: 200, padding: "12px 14px" }}
     >
       <p className="font-semibold text-foreground mb-2.5 text-sm">{dateStr}</p>
       <div className="space-y-2">
@@ -74,19 +81,39 @@ function AdvancedTooltip({ active, payload }: any) {
             {formatMinutes(d.saldo)}
           </span>
         </div>
-        <div className="flex items-center justify-between gap-5">
-          <span className="text-muted-foreground">Horas trabalhadas</span>
-          <span className="font-mono text-foreground">
-            {formatMinutes(d.workedMinutes ?? 0)}
-          </span>
-        </div>
-        <div className="h-px bg-border my-0.5" />
-        <div className="flex items-center justify-between gap-5">
-          <span className="text-muted-foreground">{deltaLabel}</span>
-          <span className="font-bold font-mono" style={{ color: deltaClr }}>
-            {formatMinutes(d.balanceMinutes)}
-          </span>
-        </div>
+        {d.workedMinutes > 0 && (
+          <div className="flex items-center justify-between gap-5">
+            <span className="text-muted-foreground">Horas trabalhadas</span>
+            <span className="font-mono text-foreground">
+              {formatMinutes(d.workedMinutes)}
+            </span>
+          </div>
+        )}
+        {d.balanceMinutes !== 0 && (
+          <>
+            <div className="h-px bg-border my-0.5" />
+            <div className="flex items-center justify-between gap-5">
+              <span className="text-muted-foreground">{deltaLabel}</span>
+              <span className="font-bold font-mono" style={{ color: deltaClr }}>
+                {formatMinutes(d.balanceMinutes)}
+              </span>
+            </div>
+          </>
+        )}
+        {d.adjustmentMinutes !== undefined && d.adjustmentMinutes !== 0 && (
+          <>
+            {d.balanceMinutes === 0 && <div className="h-px bg-border my-0.5" />}
+            <div className="flex items-center justify-between gap-5">
+              <span className="text-muted-foreground">Ajuste manual</span>
+              <span
+                className="font-bold font-mono"
+                style={{ color: balanceColor(d.adjustmentMinutes) }}
+              >
+                {formatMinutes(d.adjustmentMinutes)}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -166,43 +193,87 @@ function MonthPicker({
 // ─── Daily Area Chart ─────────────────────────────────────────────────────
 
 function DailyAreaChart({ month, year }: { month: number; year: number }) {
-  const { data: records, isLoading } = useListRecords({ month, year });
+  const { data: records, isLoading: loadingRecords } = useListRecords({ month, year });
+  const { data: allAdjustments } = useListAdjustments();
+  const { data: evolution } = useGetMonthlyEvolution();
+  const { data: settings } = useGetSettings();
+
+  // Balance accumulated before this month (from monthly evolution + legacy adj)
+  const startingBalance = useMemo(() => {
+    const legacyAdj = settings?.manualAdjustmentMinutes ?? 0;
+    if (!evolution || evolution.length === 0) return legacyAdj;
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    const entry = evolution.find((e) => e.month === prevMonth && e.year === prevYear);
+    // evolution already includes adjustments; add legacy adj (not date-specific)
+    return (entry?.cumulativeBalanceMinutes ?? 0) + legacyAdj;
+  }, [evolution, settings, month, year]);
 
   const { chartData, summaryStats } = useMemo(() => {
-    if (!records || records.length === 0) {
-      return { chartData: [], summaryStats: null };
+    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+
+    // Adjustments in this month
+    const monthAdjs = (allAdjustments ?? []).filter((a) =>
+      a.date.startsWith(monthKey),
+    );
+
+    // Map of adjustments by date
+    const adjByDate = new Map<string, ManualAdjustment[]>();
+    for (const adj of monthAdjs) {
+      const list = adjByDate.get(adj.date) ?? [];
+      adjByDate.set(adj.date, [...list, adj]);
     }
 
-    const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
+    // Collect all dates that have records or adjustments this month
+    const allDates = new Set([
+      ...(records ?? []).map((r) => r.date),
+      ...monthAdjs.map((a) => a.date),
+    ]);
 
-    let cumulative = 0;
-    const data = sorted.map((r) => {
-      cumulative += r.balanceMinutes;
-      const [y, m, d] = r.date.split("-");
+    if (allDates.size === 0) return { chartData: [], summaryStats: null };
+
+    const sortedDates = Array.from(allDates).sort();
+    const recordByDate = new Map((records ?? []).map((r) => [r.date, r]));
+
+    let cumulative = startingBalance;
+    const data = sortedDates.map((date) => {
+      const record = recordByDate.get(date);
+      const adjs = adjByDate.get(date) ?? [];
+
+      const recordBalance = record?.balanceMinutes ?? 0;
+      const adjBalance = adjs.reduce(
+        (s, a) => s + (a.type === "CREDIT" ? a.minutes : -a.minutes),
+        0,
+      );
+
+      cumulative += recordBalance + adjBalance;
+
+      const [y, m, d] = date.split("-");
       return {
         label: `${d}/${m}`,
-        fullDate: r.date,
+        fullDate: date,
         saldo: cumulative,
-        workedMinutes: r.workedMinutes ?? 0,
-        balanceMinutes: r.balanceMinutes,
+        workedMinutes: record?.workedMinutes ?? 0,
+        balanceMinutes: recordBalance,
+        adjustmentMinutes: adjBalance !== 0 ? adjBalance : undefined,
       };
     });
 
     const lastSaldo = data[data.length - 1].saldo;
-    const totalBalance = sorted.reduce((s, r) => s + r.balanceMinutes, 0);
-    const avgDaily = sorted.length > 0 ? Math.round(totalBalance / sorted.length) : 0;
+    const periodBalance = lastSaldo - startingBalance;
+    const recordCount = (records ?? []).length;
+    const avgDaily = recordCount > 0 ? Math.round(periodBalance / recordCount) : 0;
 
     return {
       chartData: data,
       summaryStats: {
-        saldoAtual: lastSaldo,
-        variacao: totalBalance,
+        saldoPeriodo: periodBalance,
         mediaDiaria: avgDaily,
       },
     };
-  }, [records]);
+  }, [records, allAdjustments, startingBalance, month, year]);
 
-  // Compute gradient stops for zero crossing
+  // Gradient stops for zero crossing
   const { zeroStop, allPositive, allNegative } = useMemo(() => {
     if (!chartData.length)
       return { zeroStop: "50%", allPositive: false, allNegative: false };
@@ -216,7 +287,6 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
 
     let zs = "50%";
     if (!ap && !an) {
-      // Has both positive and negative
       const domainMax = dataMax * 1.05;
       const domainMin = dataMin * 1.05;
       const range = domainMax - domainMin;
@@ -241,7 +311,7 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
     ? "url(#areaGradNeg)"
     : "url(#areaGradMix)";
 
-  if (isLoading) {
+  if (loadingRecords) {
     return (
       <div className="h-56 sm:h-72 flex items-center justify-center">
         <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -258,10 +328,10 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
     );
   }
 
-  const saldoIcon =
-    (summaryStats?.saldoAtual ?? 0) > 0
+  const periodIcon =
+    (summaryStats?.saldoPeriodo ?? 0) > 0
       ? TrendingUp
-      : (summaryStats?.saldoAtual ?? 0) < 0
+      : (summaryStats?.saldoPeriodo ?? 0) < 0
       ? TrendingDown
       : Minus;
 
@@ -271,16 +341,10 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
       {summaryStats && (
         <div className="flex gap-2 sm:gap-3">
           <MiniCard
-            label="Saldo Atual"
-            value={formatMinutes(summaryStats.saldoAtual)}
-            minutes={summaryStats.saldoAtual}
-            icon={saldoIcon}
-          />
-          <MiniCard
-            label="Variação no período"
-            value={formatMinutes(summaryStats.variacao)}
-            minutes={summaryStats.variacao}
-            icon={summaryStats.variacao >= 0 ? TrendingUp : TrendingDown}
+            label="Saldo do Período"
+            value={formatMinutes(summaryStats.saldoPeriodo)}
+            minutes={summaryStats.saldoPeriodo}
+            icon={periodIcon}
           />
           <MiniCard
             label="Média diária"
@@ -299,24 +363,20 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
             margin={{ top: 8, right: 4, left: -8, bottom: 0 }}
           >
             <defs>
-              {/* All positive */}
               <linearGradient id="areaGradPos" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={positiveColor} stopOpacity={0.35} />
                 <stop offset="100%" stopColor={positiveColor} stopOpacity={0.02} />
               </linearGradient>
-              {/* All negative */}
               <linearGradient id="areaGradNeg" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={negativeColor} stopOpacity={0.05} />
                 <stop offset="100%" stopColor={negativeColor} stopOpacity={0.35} />
               </linearGradient>
-              {/* Mixed — green above zero, red below */}
               <linearGradient id="areaGradMix" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={positiveColor} stopOpacity={0.35} />
                 <stop offset={zeroStop} stopColor={positiveColor} stopOpacity={0.04} />
                 <stop offset={zeroStop} stopColor={negativeColor} stopOpacity={0.04} />
                 <stop offset="100%" stopColor={negativeColor} stopOpacity={0.35} />
               </linearGradient>
-              {/* Mixed line gradient */}
               <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={positiveColor} />
                 <stop offset={zeroStop} stopColor={positiveColor} />
@@ -358,7 +418,6 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
               }}
             />
 
-            {/* Zero reference line — prominent */}
             <ReferenceLine
               y={0}
               stroke="hsl(var(--muted-foreground))"
@@ -417,22 +476,36 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
 
 function WeeklyBarChart({ month, year }: { month: number; year: number }) {
   const { data: records, isLoading } = useListRecords({ month, year });
+  const { data: allAdjustments } = useListAdjustments();
 
   const chartData = useMemo(() => {
-    if (!records || records.length === 0) return [];
+    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+    const monthAdjs = (allAdjustments ?? []).filter((a) => a.date.startsWith(monthKey));
+
     const weekMap = new Map<number, number>();
-    for (const r of records) {
+
+    for (const r of records ?? []) {
       const day = parseInt(r.date.slice(8, 10));
       const weekNum = Math.ceil(day / 7);
       weekMap.set(weekNum, (weekMap.get(weekNum) ?? 0) + r.balanceMinutes);
     }
+
+    for (const adj of monthAdjs) {
+      const day = parseInt(adj.date.slice(8, 10));
+      const weekNum = Math.ceil(day / 7);
+      const signed = adj.type === "CREDIT" ? adj.minutes : -adj.minutes;
+      weekMap.set(weekNum, (weekMap.get(weekNum) ?? 0) + signed);
+    }
+
+    if (weekMap.size === 0) return [];
+
     const weeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
     let cumulative = 0;
     return weeks.map((w) => {
       cumulative += weekMap.get(w) ?? 0;
       return { label: `Sem ${w}`, saldo: cumulative };
     });
-  }, [records]);
+  }, [records, allAdjustments, month, year]);
 
   if (isLoading) {
     return (
@@ -559,7 +632,7 @@ export function EvolutionChart() {
               "px-3 py-1.5 transition-colors",
               viewMode === "daily"
                 ? "bg-primary text-primary-foreground"
-                : "bg-background text-muted-foreground hover:text-foreground"
+                : "bg-background text-muted-foreground hover:text-foreground",
             )}
           >
             Diário
@@ -570,7 +643,7 @@ export function EvolutionChart() {
               "px-3 py-1.5 transition-colors",
               viewMode === "weekly"
                 ? "bg-primary text-primary-foreground"
-                : "bg-background text-muted-foreground hover:text-foreground"
+                : "bg-background text-muted-foreground hover:text-foreground",
             )}
           >
             Semanal

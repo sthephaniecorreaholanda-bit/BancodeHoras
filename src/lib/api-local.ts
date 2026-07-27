@@ -21,6 +21,8 @@ import {
   type BulkGenerateBody,
   type BulkGenerateResult,
   type ExportData,
+  type ManualAdjustment,
+  type ManualAdjustmentInput,
   type MissingDay,
   type MonthlyEvolution,
   type Settings,
@@ -48,6 +50,7 @@ export const getGetMissingDaysQueryKey = () =>
   ["summary", "missing-days"] as const;
 export const getGetSettingsQueryKey = () => ["settings"] as const;
 export const getExportRecordsQueryKey = () => ["records", "export"] as const;
+export const getListAdjustmentsQueryKey = () => ["adjustments"] as const;
 
 // ─── Storage helpers ──────────────────────────────────────────────────────
 
@@ -66,8 +69,8 @@ type DatabaseRecord = {
 };
 
 const RECORDS_TABLE = "Horas";
-
 const SETTINGS_KEY = "bh:settings";
+const ADJUSTMENTS_KEY = "bh:adjustments";
 
 type LegacySettings = Settings & { dailyTargetMinutes?: number };
 
@@ -88,6 +91,14 @@ function loadSettings(): Settings {
 
 function saveSettings(s: Settings): void {
   writeKey(SETTINGS_KEY, s);
+}
+
+function loadAdjustments(): ManualAdjustment[] {
+  return readKey<ManualAdjustment[]>(ADJUSTMENTS_KEY, []);
+}
+
+function saveAdjustments(list: ManualAdjustment[]): void {
+  writeKey(ADJUSTMENTS_KEY, list);
 }
 
 async function loadRecords(): Promise<TimeRecord[]> {
@@ -146,6 +157,7 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["records"], exact: false });
   qc.invalidateQueries({ queryKey: ["summary"], exact: false });
   qc.invalidateQueries({ queryKey: ["settings"], exact: false });
+  qc.invalidateQueries({ queryKey: ["adjustments"], exact: false });
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────
@@ -155,7 +167,8 @@ export function useGetSummary() {
     queryKey: getGetSummaryQueryKey(),
     queryFn: async (): Promise<Summary> => {
       const records = await loadRecords();
-      return computeSummary(records, loadSettings());
+      const adjustments = loadAdjustments();
+      return computeSummary(records, loadSettings(), adjustments);
     },
   });
 }
@@ -182,7 +195,8 @@ export function useGetMonthlyEvolution() {
     queryKey: getGetMonthlyEvolutionQueryKey(),
     queryFn: async (): Promise<MonthlyEvolution[]> => {
       const records = await loadRecords();
-      return computeMonthlyEvolution(records);
+      const adjustments = loadAdjustments();
+      return computeMonthlyEvolution(records, adjustments);
     },
   });
 }
@@ -206,14 +220,53 @@ export function useExportRecords(opts?: ExportQueryOpts) {
     queryKey: getExportRecordsQueryKey(),
     queryFn: async (): Promise<ExportData> => {
       const records = await loadRecords();
-      const csv = recordsToCsv(records);
+      const adjustments = loadAdjustments();
+      const csv = recordsToCsv(records, adjustments);
       return { csv, filename: defaultExportFilename() };
     },
     ...(opts?.query ?? {}),
   });
 }
 
+export function useListAdjustments() {
+  return useQuery({
+    queryKey: getListAdjustmentsQueryKey(),
+    queryFn: (): ManualAdjustment[] => loadAdjustments(),
+  });
+}
+
 // ─── Mutations ────────────────────────────────────────────────────────────
+
+export function useCreateAdjustment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ data }: { data: ManualAdjustmentInput }): Promise<ManualAdjustment> => {
+      const list = loadAdjustments();
+      const adj: ManualAdjustment = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+        date: data.date,
+        type: data.type,
+        minutes: data.minutes,
+        reason: data.reason ?? null,
+        createdAt: new Date().toISOString(),
+      };
+      saveAdjustments([...list, adj]);
+      return adj;
+    },
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useDeleteAdjustment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string }): Promise<void> => {
+      const list = loadAdjustments();
+      saveAdjustments(list.filter((a) => a.id !== id));
+    },
+    onSuccess: () => invalidateAll(qc),
+  });
+}
 
 export function useCreateRecord() {
   const qc = useQueryClient();
@@ -474,12 +527,6 @@ export function useBulkGenerateMonth() {
 
 /**
  * Deletes the authenticated user's account permanently.
- * Calls the Supabase Edge Function "delete-account" which:
- *   1. Verifies the caller's JWT
- *   2. Calls auth.admin.deleteUser() server-side (requires service_role_key)
- *   3. ON DELETE CASCADE on "Horas".user_id removes all records automatically
- *
- * After the Edge Function call, the client clears localStorage and signs out.
  */
 export function useDeleteAccount() {
   return useMutation({
@@ -495,12 +542,11 @@ export function useDeleteAccount() {
         throw new Error(error.message ?? "Falha ao excluir conta.");
       }
 
-      // Clear all local data
       localStorage.removeItem("bh:settings");
+      localStorage.removeItem("bh:adjustments");
       localStorage.removeItem("bh:no-remember");
       sessionStorage.removeItem("bh:session-active");
 
-      // Sign out (session is already invalidated server-side)
       await supabase.auth.signOut();
     },
   });
