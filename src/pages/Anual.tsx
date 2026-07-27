@@ -36,7 +36,7 @@ function CustomTooltip({
 }) {
   if (!active || !payload?.length) return null;
   const val = payload[0].value;
-  const color = val > 0 ? "#10b981" : val < 0 ? "#f43f5e" : "#94a3b8";
+  const color = val > 0 ? "hsl(var(--primary))" : val < 0 ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))";
   return (
     <div className="bg-card border border-border rounded-xl px-3 py-2 shadow-lg text-sm">
       <p className="font-medium text-foreground mb-0.5">{label}</p>
@@ -149,11 +149,11 @@ export default function Anual() {
           </div>
           <div className="bg-card border border-card-border rounded-2xl p-4 shadow-sm text-center">
             <p className="text-xs text-muted-foreground mb-1">Meses Positivos</p>
-            <p className="text-xl font-bold text-emerald-500">{positiveMonths}</p>
+            <p className="text-xl font-bold text-primary">{positiveMonths}</p>
           </div>
           <div className="bg-card border border-card-border rounded-2xl p-4 shadow-sm text-center">
             <p className="text-xs text-muted-foreground mb-1">Meses Negativos</p>
-            <p className="text-xl font-bold text-rose-500">{negativeMonths}</p>
+            <p className="text-xl font-bold text-destructive">{negativeMonths}</p>
           </div>
         </div>
       )}

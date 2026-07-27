@@ -79,12 +79,12 @@ function GoalCard({
   }
 
   const barColor = reached
-    ? "bg-emerald-500"
-    : pct >= 70
     ? "bg-primary"
+    : pct >= 70
+    ? "bg-primary/70"
     : pct >= 40
     ? "bg-amber-500"
-    : "bg-rose-500";
+    : "bg-destructive";
 
   const now = new Date();
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -99,14 +99,14 @@ function GoalCard({
         </div>
         <div className="flex items-center gap-1.5">
           {reached ? (
-            <TrendingUp size={14} className="text-emerald-500" />
+            <TrendingUp size={14} className="text-primary" />
           ) : (
-            <TrendingDown size={14} className="text-rose-500" />
+            <TrendingDown size={14} className="text-destructive" />
           )}
           <span
             className={cn(
               "text-xs font-semibold",
-              reached ? "text-emerald-500" : "text-rose-500"
+              reached ? "text-primary" : "text-destructive"
             )}
           >
             {reached ? "Meta atingida!" : `Faltam ${formatMinutes(Math.abs(needed))}`}

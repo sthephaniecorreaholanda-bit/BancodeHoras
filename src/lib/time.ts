@@ -25,14 +25,14 @@ export function hhmmToMinutes(hhmm: string): number {
 }
 
 export function getBalanceColor(minutes: number): string {
-  if (minutes > 0) return "text-emerald-600 dark:text-emerald-400";
-  if (minutes < 0) return "text-rose-600 dark:text-rose-400";
+  if (minutes > 0) return "text-primary";
+  if (minutes < 0) return "text-destructive";
   return "text-muted-foreground";
 }
 
 export function getBalanceBg(minutes: number): string {
-  if (minutes > 0) return "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800";
-  if (minutes < 0) return "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800";
+  if (minutes > 0) return "bg-primary/10 border-primary/30";
+  if (minutes < 0) return "bg-destructive/10 border-destructive/30";
   return "bg-muted border-muted-foreground/20";
 }
 

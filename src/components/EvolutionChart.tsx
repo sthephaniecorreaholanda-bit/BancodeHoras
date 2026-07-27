@@ -31,15 +31,15 @@ const MONTHS = [
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 function balanceColor(minutes: number) {
-  if (minutes > 0) return "#10b981";
-  if (minutes < 0) return "#f43f5e";
-  return "#94a3b8";
+  if (minutes > 0) return "hsl(var(--primary))";
+  if (minutes < 0) return "hsl(var(--destructive))";
+  return "hsl(var(--muted-foreground))";
 }
 
 function balanceBg(minutes: number) {
-  if (minutes > 0) return "rgba(16,185,129,0.1)";
-  if (minutes < 0) return "rgba(244,63,94,0.1)";
-  return "rgba(148,163,184,0.08)";
+  if (minutes > 0) return "hsl(var(--primary) / 0.1)";
+  if (minutes < 0) return "hsl(var(--destructive) / 0.1)";
+  return "hsl(var(--muted-foreground) / 0.08)";
 }
 
 // ─── Advanced Tooltip ─────────────────────────────────────────────────────
@@ -228,8 +228,8 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
     return { zeroStop: zs, allPositive: ap, allNegative: an };
   }, [chartData]);
 
-  const positiveColor = "#10b981";
-  const negativeColor = "#f43f5e";
+  const positiveColor = "hsl(var(--primary))";
+  const negativeColor = "hsl(var(--destructive))";
   const mainLineColor = allPositive
     ? positiveColor
     : allNegative
@@ -513,10 +513,10 @@ function WeeklyBarChart({ month, year }: { month: number; year: number }) {
                 key={index}
                 fill={
                   entry.saldo > 0
-                    ? "#10b981"
+                    ? "hsl(var(--primary))"
                     : entry.saldo < 0
-                    ? "#f43f5e"
-                    : "#94a3b8"
+                    ? "hsl(var(--destructive))"
+                    : "hsl(var(--muted-foreground))"
                 }
                 opacity={0.85}
               />
