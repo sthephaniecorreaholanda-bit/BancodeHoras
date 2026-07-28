@@ -16,6 +16,7 @@ import {
   Target,
   TrendingUp,
   TrendingDown,
+  SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -71,11 +72,7 @@ function GoalCard({
   } else if (goalMinutes < 0) {
     pct = reached ? 100 : Math.min(100, Math.max(0, (currentMinutes / goalMinutes) * 100));
   } else {
-    if (currentMinutes === 0) {
-      pct = 100;
-    } else {
-      pct = reached ? 100 : 0;
-    }
+    pct = currentMinutes === 0 ? 100 : reached ? 100 : 0;
   }
 
   const barColor = reached
@@ -103,12 +100,7 @@ function GoalCard({
           ) : (
             <TrendingDown size={14} className="text-destructive" />
           )}
-          <span
-            className={cn(
-              "text-xs font-semibold",
-              reached ? "text-primary" : "text-destructive"
-            )}
-          >
+          <span className={cn("text-xs font-semibold", reached ? "text-primary" : "text-destructive")}>
             {reached ? "Meta atingida!" : `Faltam ${formatMinutes(Math.abs(needed))}`}
           </span>
         </div>
@@ -156,6 +148,8 @@ export default function Painel() {
 
   const hasGoal =
     settings?.goalMinutes !== null && settings?.goalMinutes !== undefined;
+
+  const adjMinutes = summary?.adjustmentMinutes ?? 0;
 
   return (
     <div className="space-y-6">
@@ -210,10 +204,10 @@ export default function Painel() {
             value={String(summary?.holidays ?? 0)}
           />
           <SummaryCard
-            icon={Clock}
-            label="Ajuste Manual"
-            value={formatMinutes(summary?.manualAdjustmentMinutes ?? 0)}
-            colorClass={getBalanceColor(summary?.manualAdjustmentMinutes ?? 0)}
+            icon={SlidersHorizontal}
+            label="Ajustes Manuais"
+            value={formatMinutes(adjMinutes)}
+            colorClass={adjMinutes !== 0 ? getBalanceColor(adjMinutes) : undefined}
           />
         </div>
       )}

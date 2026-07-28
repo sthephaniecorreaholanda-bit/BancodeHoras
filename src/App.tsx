@@ -12,6 +12,7 @@ import Historico from "@/pages/Historico";
 import Personalizacao from "@/pages/Personalizacao";
 import Configuracoes from "@/pages/Configuracoes";
 import Anual from "@/pages/Anual";
+import Relatorios from "@/pages/Relatorios";
 import NotFound from "@/pages/not-found";
 import { supabase, isSupabaseConfigured, getSiteUrl } from "@/lib/supabaseClient";
 import { useAuth, NO_REMEMBER_KEY, SESSION_ACTIVE_KEY } from "@/hooks/use-auth";
@@ -445,6 +446,7 @@ function Router({ onLogout }: { onLogout: () => void }) {
         <Route path="/" component={Painel} />
         <Route path="/registrar" component={RegistrarPonto} />
         <Route path="/historico" component={Historico} />
+        <Route path="/relatorios" component={Relatorios} />
         <Route path="/anual" component={Anual} />
         <Route path="/personalizacao" component={Personalizacao} />
         <Route path="/configuracoes" component={Configuracoes} />

@@ -3,6 +3,9 @@ import type {
   ManualAdjustment,
   MissingDay,
   MonthlyEvolution,
+  RecordType,
+  ReportData,
+  ReportRow,
   Settings,
   Summary,
   TimeRecord,
@@ -62,7 +65,6 @@ export function computeBalanceForRecord(
       effectiveExit,
       settings.lunchBreakMinutes,
     );
-    // Folga compensada deve debitar a jornada líquida do dia informado
     return {
       workedMinutes: 0,
       balanceMinutes: -deductedMinutes,
@@ -73,7 +75,6 @@ export function computeBalanceForRecord(
 
 export function computeSummary(
   records: TimeRecord[],
-  settings: Settings,
   adjustments: ManualAdjustment[] = [],
 ): Summary {
   let totalBalance = 0;
@@ -88,22 +89,18 @@ export function computeSummary(
     else if (r.type === "HOLIDAY") holidays += 1;
   }
 
-  // Legacy single-value adjustment (backward compatibility)
-  totalBalance += settings.manualAdjustmentMinutes;
-
-  // Transaction-based adjustments
-  const adjTotal = adjustments.reduce(
+  const adjustmentMinutes = adjustments.reduce(
     (s, a) => s + (a.type === "CREDIT" ? a.minutes : -a.minutes),
     0,
   );
-  totalBalance += adjTotal;
+  totalBalance += adjustmentMinutes;
 
   return {
     totalBalanceMinutes: totalBalance,
     daysWorked,
     compensatedLeaves,
     holidays,
-    manualAdjustmentMinutes: settings.manualAdjustmentMinutes + adjTotal,
+    adjustmentMinutes,
   };
 }
 
@@ -145,7 +142,6 @@ export function computeMonthlyEvolution(
     else byMonth.set(key, { year: y, month: m, total: r.balanceMinutes });
   }
 
-  // Include transaction-based adjustments in monthly totals
   for (const adj of adjustments) {
     const [yStr, mStr] = adj.date.split("-");
     const y = Number(yStr);
@@ -272,4 +268,173 @@ export function bulkGenerateInputs(
   }
 
   return { toCreate, skipped };
+}
+
+// ─── Night-time overtime helper ───────────────────────────────────────────
+
+function computeNightMinutes(entryTime: string, exitTime: string): number {
+  const MORNING_END = 5 * 60;  // 05:00
+  const NIGHT_START = 22 * 60; // 22:00
+
+  const [eh, em] = entryTime.split(":").map(Number);
+  const [xh, xm] = exitTime.split(":").map(Number);
+  if (Number.isNaN(eh) || Number.isNaN(xh)) return 0;
+
+  const entry = eh * 60 + em;
+  let exit = xh * 60 + xm;
+  if (exit <= entry) exit += 24 * 60; // spans midnight
+
+  let nightMins = 0;
+
+  // Before 05:00
+  if (entry < MORNING_END) {
+    nightMins += Math.min(exit, MORNING_END) - entry;
+  }
+
+  // After 22:00
+  if (exit > NIGHT_START) {
+    nightMins += exit - Math.max(entry, NIGHT_START);
+  }
+
+  return Math.max(0, nightMins);
+}
+
+// ─── Report computation ───────────────────────────────────────────────────
+
+export function computeReport(
+  allRecords: TimeRecord[],
+  allAdjustments: ManualAdjustment[],
+  startDate: string,
+  endDate: string,
+): ReportData {
+  // Split records and adjustments into before / during the period
+  const periodRecords = allRecords.filter((r) => r.date >= startDate && r.date <= endDate);
+  const beforeRecords = allRecords.filter((r) => r.date < startDate);
+  const periodAdjs = allAdjustments.filter((a) => a.date >= startDate && a.date <= endDate);
+  const beforeAdjs = allAdjustments.filter((a) => a.date < startDate);
+
+  // Saldo anterior
+  const previousBalance =
+    beforeRecords.reduce((s, r) => s + r.balanceMinutes, 0) +
+    beforeAdjs.reduce((s, a) => s + (a.type === "CREDIT" ? a.minutes : -a.minutes), 0);
+
+  // Adjustments grouped by date for period
+  const adjByDate = new Map<string, number>();
+  for (const adj of periodAdjs) {
+    const signed = adj.type === "CREDIT" ? adj.minutes : -adj.minutes;
+    adjByDate.set(adj.date, (adjByDate.get(adj.date) ?? 0) + signed);
+  }
+
+  // All dates in period that have at least one event
+  const allDates = new Set([
+    ...periodRecords.map((r) => r.date),
+    ...periodAdjs.map((a) => a.date),
+  ]);
+  const sortedDates = Array.from(allDates).sort();
+  const recordByDate = new Map(periodRecords.map((r) => [r.date, r]));
+
+  let workedMinutes = 0;
+  let creditMinutes = 0;
+  let debitMinutes = 0;
+  let sundaysWorked = 0;
+  let sundayMinutes = 0;
+  let holidaysWorked = 0;
+  let holidayMinutes = 0;
+  let nightAddMinutes = 0;
+  let absenceMinutes = 0;
+  let daysWorked = 0;
+  let daysAbsent = 0;
+  let daysOff = 0;
+
+  let running = previousBalance;
+  const rows: ReportRow[] = [];
+
+  for (const date of sortedDates) {
+    const record = recordByDate.get(date);
+    const adjNet = adjByDate.get(date) ?? 0;
+
+    if (record) {
+      workedMinutes += record.workedMinutes;
+      if (record.balanceMinutes > 0) creditMinutes += record.balanceMinutes;
+      else if (record.balanceMinutes < 0) debitMinutes += Math.abs(record.balanceMinutes);
+
+      if (record.type === "WORK_DAY") {
+        daysWorked++;
+        if (isSunday(date)) {
+          sundaysWorked++;
+          sundayMinutes += record.workedMinutes;
+        }
+        if (isHoliday(date)) {
+          holidaysWorked++;
+          holidayMinutes += record.workedMinutes;
+        }
+        if (record.entryTime && record.exitTime) {
+          nightAddMinutes += computeNightMinutes(record.entryTime, record.exitTime);
+        }
+      } else if (record.type === "COMPENSATED_LEAVE") {
+        daysAbsent++;
+        absenceMinutes += Math.abs(record.balanceMinutes);
+      } else if (record.type === "HOLIDAY") {
+        daysOff++;
+      }
+
+      running += record.balanceMinutes + adjNet;
+      rows.push({
+        date,
+        type: record.type,
+        entryTime: record.entryTime,
+        exitTime: record.exitTime,
+        workedMinutes: record.workedMinutes,
+        creditMinutes: Math.max(0, record.balanceMinutes),
+        debitMinutes: Math.max(0, -record.balanceMinutes),
+        adjustmentMinutes: adjNet,
+        runningBalance: running,
+        note: record.note,
+      });
+    } else if (adjNet !== 0) {
+      // Adjustment-only day (no work record)
+      running += adjNet;
+      rows.push({
+        date,
+        type: "ADJUSTMENT",
+        entryTime: null,
+        exitTime: null,
+        workedMinutes: 0,
+        creditMinutes: Math.max(0, adjNet),
+        debitMinutes: Math.max(0, -adjNet),
+        adjustmentMinutes: adjNet,
+        runningBalance: running,
+        note: null,
+      });
+    }
+  }
+
+  const adjustmentTotal = periodAdjs.reduce(
+    (s, a) => s + (a.type === "CREDIT" ? a.minutes : -a.minutes),
+    0,
+  );
+
+  const finalBalance = previousBalance + creditMinutes - debitMinutes + adjustmentTotal;
+
+  return {
+    startDate,
+    endDate,
+    previousBalance,
+    workedMinutes,
+    creditMinutes,
+    debitMinutes,
+    finalBalance,
+    sundaysWorked,
+    sundayMinutes,
+    holidaysWorked,
+    holidayMinutes,
+    nightAddMinutes,
+    absenceMinutes,
+    daysWorked,
+    daysAbsent,
+    daysOff,
+    recordCount: periodRecords.length,
+    adjustmentTotal,
+    rows,
+  };
 }

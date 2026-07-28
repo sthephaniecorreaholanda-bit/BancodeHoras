@@ -49,7 +49,6 @@ export type Settings = {
   id: number;
   defaultEntryTime: string; // HH:MM
   defaultExitTime: string; // HH:MM
-  manualAdjustmentMinutes: number;
   lunchBreakMinutes: number;
   goalMinutes: number | null;
 };
@@ -57,7 +56,6 @@ export type Settings = {
 export type SettingsUpdate = {
   defaultEntryTime?: string;
   defaultExitTime?: string;
-  manualAdjustmentMinutes?: number;
   lunchBreakMinutes?: number;
   goalMinutes?: number | null;
 };
@@ -67,7 +65,7 @@ export type Summary = {
   daysWorked: number;
   compensatedLeaves: number;
   holidays: number;
-  manualAdjustmentMinutes: number;
+  adjustmentMinutes: number;
 };
 
 export type MonthlyEvolution = {
@@ -98,11 +96,47 @@ export type BulkGenerateResult = {
   skipped: number;
 };
 
+// ─── Report types ─────────────────────────────────────────────────────────
+
+export type ReportRow = {
+  date: string;
+  type: RecordType | "ADJUSTMENT";
+  entryTime: string | null;
+  exitTime: string | null;
+  workedMinutes: number;
+  creditMinutes: number;
+  debitMinutes: number;
+  adjustmentMinutes: number; // net adjustments on this date (signed)
+  runningBalance: number;
+  note: string | null;
+};
+
+export type ReportData = {
+  startDate: string;
+  endDate: string;
+  previousBalance: number;
+  workedMinutes: number;
+  creditMinutes: number;
+  debitMinutes: number;
+  finalBalance: number;
+  sundaysWorked: number;
+  sundayMinutes: number;
+  holidaysWorked: number;
+  holidayMinutes: number;
+  nightAddMinutes: number;
+  absenceMinutes: number;
+  daysWorked: number;
+  daysAbsent: number;
+  daysOff: number;
+  recordCount: number;
+  adjustmentTotal: number;
+  rows: ReportRow[];
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   id: 1,
   defaultEntryTime: "08:00",
   defaultExitTime: "17:00",
-  manualAdjustmentMinutes: 0,
   lunchBreakMinutes: 60,
   goalMinutes: null,
 };

@@ -198,16 +198,14 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
   const { data: evolution } = useGetMonthlyEvolution();
   const { data: settings } = useGetSettings();
 
-  // Balance accumulated before this month (from monthly evolution + legacy adj)
+  // Balance accumulated before this month (from monthly evolution, which already includes adjustments)
   const startingBalance = useMemo(() => {
-    const legacyAdj = settings?.manualAdjustmentMinutes ?? 0;
-    if (!evolution || evolution.length === 0) return legacyAdj;
+    if (!evolution || evolution.length === 0) return 0;
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
     const entry = evolution.find((e) => e.month === prevMonth && e.year === prevYear);
-    // evolution already includes adjustments; add legacy adj (not date-specific)
-    return (entry?.cumulativeBalanceMinutes ?? 0) + legacyAdj;
-  }, [evolution, settings, month, year]);
+    return entry?.cumulativeBalanceMinutes ?? 0;
+  }, [evolution, month, year]);
 
   const { chartData, summaryStats } = useMemo(() => {
     const monthKey = `${year}-${String(month).padStart(2, "0")}`;

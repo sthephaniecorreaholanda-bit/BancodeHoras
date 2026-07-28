@@ -71,22 +71,63 @@ type DatabaseRecord = {
 const RECORDS_TABLE = "Horas";
 const SETTINGS_KEY = "bh:settings";
 const ADJUSTMENTS_KEY = "bh:adjustments";
+const MIGRATION_V1_KEY = "bh:migration-adj-v1";
 
-type LegacySettings = Settings & { dailyTargetMinutes?: number };
+type LegacySettings = Partial<Settings> & {
+  manualAdjustmentMinutes?: number;
+  dailyTargetMinutes?: number;
+};
+
+/**
+ * One-time migration: converts the old permanent `manualAdjustmentMinutes`
+ * setting into a proper transaction-based ManualAdjustment entry.
+ * Runs once (guarded by MIGRATION_V1_KEY in localStorage).
+ */
+function runMigrations(raw: LegacySettings): void {
+  const done = localStorage.getItem(MIGRATION_V1_KEY);
+  if (done) return;
+
+  const legacyAdj = raw.manualAdjustmentMinutes ?? 0;
+  if (legacyAdj !== 0) {
+    const adjs = readKey<ManualAdjustment[]>(ADJUSTMENTS_KEY, []);
+    const alreadyMigrated = adjs.some((a) => a.id.startsWith("migration-v1-"));
+    if (!alreadyMigrated) {
+      const today = new Date().toISOString().slice(0, 10);
+      const migrated: ManualAdjustment = {
+        id: "migration-v1-" + Date.now().toString(36),
+        date: today,
+        type: legacyAdj > 0 ? "CREDIT" : "DEBIT",
+        minutes: Math.abs(legacyAdj),
+        reason: "Migrado do ajuste manual configurado anteriormente",
+        createdAt: new Date().toISOString(),
+      };
+      writeKey(ADJUSTMENTS_KEY, [...adjs, migrated]);
+    }
+  }
+
+  localStorage.setItem(MIGRATION_V1_KEY, "1");
+}
 
 function loadSettings(): Settings {
   const raw = readKey<LegacySettings>(SETTINGS_KEY, DEFAULT_SETTINGS);
-  if (raw.defaultEntryTime && raw.defaultExitTime) {
-    return {
-      id: raw.id ?? 1,
-      defaultEntryTime: raw.defaultEntryTime,
-      defaultExitTime: raw.defaultExitTime,
-      manualAdjustmentMinutes: raw.manualAdjustmentMinutes ?? 0,
-      lunchBreakMinutes: raw.lunchBreakMinutes ?? 60,
-      goalMinutes: raw.goalMinutes ?? null,
-    };
+
+  // Run one-time migration of legacy manualAdjustmentMinutes
+  runMigrations(raw);
+
+  const settings: Settings = {
+    id: raw.id ?? 1,
+    defaultEntryTime: raw.defaultEntryTime || DEFAULT_SETTINGS.defaultEntryTime,
+    defaultExitTime: raw.defaultExitTime || DEFAULT_SETTINGS.defaultExitTime,
+    lunchBreakMinutes: raw.lunchBreakMinutes ?? 60,
+    goalMinutes: raw.goalMinutes ?? null,
+  };
+
+  // Remove the legacy field from stored settings if it exists
+  if ((raw as any).manualAdjustmentMinutes !== undefined) {
+    writeKey(SETTINGS_KEY, settings);
   }
-  return { ...DEFAULT_SETTINGS, ...raw };
+
+  return settings;
 }
 
 function saveSettings(s: Settings): void {
@@ -168,7 +209,7 @@ export function useGetSummary() {
     queryFn: async (): Promise<Summary> => {
       const records = await loadRecords();
       const adjustments = loadAdjustments();
-      return computeSummary(records, loadSettings(), adjustments);
+      return computeSummary(records, adjustments);
     },
   });
 }
@@ -235,6 +276,17 @@ export function useListAdjustments() {
   });
 }
 
+/** Load ALL records without any month/year filter (for reports). */
+export function useListAllRecords() {
+  return useQuery({
+    queryKey: getListRecordsQueryKey(),
+    queryFn: async (): Promise<TimeRecord[]> => {
+      const records = await loadRecords();
+      return records;
+    },
+  });
+}
+
 // ─── Mutations ────────────────────────────────────────────────────────────
 
 export function useCreateAdjustment() {
@@ -252,6 +304,35 @@ export function useCreateAdjustment() {
       };
       saveAdjustments([...list, adj]);
       return adj;
+    },
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useUpdateAdjustment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: ManualAdjustmentInput;
+    }): Promise<ManualAdjustment> => {
+      const list = loadAdjustments();
+      const idx = list.findIndex((a) => a.id === id);
+      if (idx === -1) throw new Error("Ajuste não encontrado.");
+      const updated: ManualAdjustment = {
+        ...list[idx],
+        date: data.date,
+        type: data.type,
+        minutes: data.minutes,
+        reason: data.reason ?? null,
+      };
+      const next = [...list];
+      next[idx] = updated;
+      saveAdjustments(next);
+      return updated;
     },
     onSuccess: () => invalidateAll(qc),
   });
@@ -525,9 +606,6 @@ export function useBulkGenerateMonth() {
   });
 }
 
-/**
- * Deletes the authenticated user's account permanently.
- */
 export function useDeleteAccount() {
   return useMutation({
     mutationFn: async (): Promise<void> => {
@@ -545,6 +623,7 @@ export function useDeleteAccount() {
       localStorage.removeItem("bh:settings");
       localStorage.removeItem("bh:adjustments");
       localStorage.removeItem("bh:no-remember");
+      localStorage.removeItem(MIGRATION_V1_KEY);
       sessionStorage.removeItem("bh:session-active");
 
       await supabase.auth.signOut();

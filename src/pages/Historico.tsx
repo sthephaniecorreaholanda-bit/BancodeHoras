@@ -9,6 +9,7 @@ import {
   useGetSettings,
   useListAdjustments,
   useDeleteAdjustment,
+  useUpdateAdjustment,
   getListRecordsQueryKey,
   getGetSummaryQueryKey,
   getGetMonthlyEvolutionQueryKey,
@@ -22,6 +23,7 @@ import {
   getBalanceColor,
   TYPE_LABELS,
   minutesToHHMM,
+  hhmmToMinutes,
 } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import {
@@ -37,9 +39,11 @@ import {
   Loader2,
   Clock,
   SlidersHorizontal,
+  Calendar,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { ManualAdjustment } from "@/lib/types";
+import type { ManualAdjustment, AdjustmentType } from "@/lib/types";
+import { todayISO } from "@/lib/time";
 
 const MONTHS = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -63,17 +67,51 @@ type TimeRecord = {
   note?: string | null;
 };
 
-// ─── Adjustment Card ──────────────────────────────────────────────────────
+// ─── Editable Adjustment Card ─────────────────────────────────────────────
 
 function AdjustmentCard({
   adj,
-  onDeleted,
+  onChanged,
 }: {
   adj: ManualAdjustment;
-  onDeleted: () => void;
+  onChanged: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [adjType, setAdjType] = useState<AdjustmentType>(adj.type);
+  const [adjDate, setAdjDate] = useState(adj.date);
+  const [adjHHMM, setAdjHHMM] = useState(minutesToHHMM(adj.minutes));
+  const [adjReason, setAdjReason] = useState(adj.reason ?? "");
+
   const deleteAdjustment = useDeleteAdjustment();
+  const updateAdjustment = useUpdateAdjustment();
   const { toast } = useToast();
+
+  function handleCancelEdit() {
+    setAdjType(adj.type);
+    setAdjDate(adj.date);
+    setAdjHHMM(minutesToHHMM(adj.minutes));
+    setAdjReason(adj.reason ?? "");
+    setEditing(false);
+  }
+
+  function handleSave() {
+    const minutes = hhmmToMinutes(adjHHMM);
+    if (minutes <= 0) {
+      toast({ title: "Informe uma quantidade maior que zero", variant: "destructive" });
+      return;
+    }
+    updateAdjustment.mutate(
+      { id: adj.id, data: { date: adjDate, type: adjType, minutes, reason: adjReason.trim() || null } },
+      {
+        onSuccess: () => {
+          toast({ title: "Ajuste atualizado" });
+          setEditing(false);
+          onChanged();
+        },
+        onError: () => toast({ title: "Erro ao atualizar ajuste", variant: "destructive" }),
+      },
+    );
+  }
 
   function handleDelete() {
     deleteAdjustment.mutate(
@@ -81,7 +119,7 @@ function AdjustmentCard({
       {
         onSuccess: () => {
           toast({ title: "Ajuste excluído" });
-          onDeleted();
+          onChanged();
         },
         onError: () => toast({ title: "Erro ao excluir ajuste", variant: "destructive" }),
       },
@@ -91,57 +129,160 @@ function AdjustmentCard({
   const signedMinutes = adj.type === "CREDIT" ? adj.minutes : -adj.minutes;
 
   return (
-    <div className="bg-card border border-card-border rounded-2xl shadow-sm p-4 flex items-start gap-3">
-      <SlidersHorizontal
-        size={15}
-        className={cn(
-          "flex-shrink-0 mt-0.5",
-          adj.type === "CREDIT" ? "text-primary" : "text-destructive",
-        )}
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-          <span className="font-semibold text-sm">{formatDate(adj.date)}</span>
-          <span
+    <div
+      className={cn(
+        "bg-card border rounded-2xl shadow-sm transition-all duration-200",
+        editing ? "border-primary/40 ring-1 ring-primary/20" : "border-card-border",
+      )}
+    >
+      {!editing ? (
+        <div className="p-4 flex items-start gap-3">
+          <SlidersHorizontal
+            size={15}
             className={cn(
-              "text-xs font-medium px-2 py-0.5 rounded-full",
-              adj.type === "CREDIT"
-                ? "bg-primary/10 text-primary"
-                : "bg-destructive/10 text-destructive",
+              "flex-shrink-0 mt-0.5",
+              adj.type === "CREDIT" ? "text-primary" : "text-destructive",
             )}
-          >
-            {adj.type === "CREDIT" ? "Crédito manual" : "Débito manual"}
-          </span>
-        </div>
-        {adj.reason && (
-          <div className="flex items-start gap-1.5 mt-1">
-            <MessageSquare size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-muted-foreground leading-relaxed italic">{adj.reason}</p>
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+              <span className="font-semibold text-sm">{formatDate(adj.date)}</span>
+              <span
+                className={cn(
+                  "text-xs font-medium px-2 py-0.5 rounded-full",
+                  adj.type === "CREDIT"
+                    ? "bg-primary/10 text-primary"
+                    : "bg-destructive/10 text-destructive",
+                )}
+              >
+                {adj.type === "CREDIT" ? "Crédito manual" : "Débito manual"}
+              </span>
+            </div>
+            {adj.reason && (
+              <div className="flex items-start gap-1.5 mt-1">
+                <MessageSquare size={11} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-muted-foreground leading-relaxed italic">{adj.reason}</p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <span
-          className={cn(
-            "font-bold text-sm tabular-nums font-mono mr-1",
-            getBalanceColor(signedMinutes),
-          )}
-        >
-          {formatMinutes(signedMinutes)}
-        </span>
-        <button
-          onClick={handleDelete}
-          disabled={deleteAdjustment.isPending}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
-          title="Excluir ajuste"
-        >
-          {deleteAdjustment.isPending ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Trash2 size={14} />
-          )}
-        </button>
-      </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className={cn("font-bold text-sm tabular-nums font-mono mr-1", getBalanceColor(signedMinutes))}>
+              {formatMinutes(signedMinutes)}
+            </span>
+            <button
+              onClick={() => setEditing(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition"
+              title="Editar ajuste"
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleteAdjustment.isPending}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition disabled:opacity-40"
+              title="Excluir ajuste"
+            >
+              {deleteAdjustment.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-sm text-foreground">Editar Ajuste Manual</span>
+            <button
+              onClick={handleCancelEdit}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* Tipo */}
+          <div className="grid grid-cols-2 gap-2">
+            {(["CREDIT", "DEBIT"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setAdjType(t)}
+                className={cn(
+                  "px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all text-center",
+                  adjType === t
+                    ? t === "CREDIT"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-destructive bg-destructive/10 text-destructive"
+                    : "border-card-border text-muted-foreground hover:border-muted-foreground/40 bg-background",
+                )}
+              >
+                {t === "CREDIT" ? "+ Crédito" : "− Débito"}
+              </button>
+            ))}
+          </div>
+
+          {/* Data + Quantidade */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <Calendar size={11} /> Data
+              </label>
+              <input
+                type="date"
+                value={adjDate}
+                onChange={(e) => setAdjDate(e.target.value)}
+                required
+                className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Quantidade (HH:MM)</label>
+              <input
+                type="time"
+                value={adjHHMM}
+                onChange={(e) => setAdjHHMM(e.target.value)}
+                required
+                className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Motivo */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Motivo <span className="opacity-60">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={adjReason}
+              onChange={(e) => setAdjReason(e.target.value)}
+              placeholder="Ex: acerto do mês anterior"
+              maxLength={200}
+              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition"
+            />
+          </div>
+
+          <div className="flex gap-2 justify-end pt-1">
+            <button
+              onClick={handleCancelEdit}
+              className="px-3 py-1.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-accent transition"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={updateAdjustment.isPending}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-sm font-medium transition disabled:opacity-60",
+                adjType === "CREDIT"
+                  ? "bg-primary text-primary-foreground hover:opacity-90"
+                  : "bg-destructive text-destructive-foreground hover:opacity-90",
+              )}
+            >
+              {updateAdjustment.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              Salvar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -648,7 +789,7 @@ export default function Historico() {
               <AdjustmentCard
                 key={`adj-${item.data.id}`}
                 adj={item.data}
-                onDeleted={invalidateAll}
+                onChanged={invalidateAll}
               />
             ),
           )}
