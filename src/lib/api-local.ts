@@ -254,8 +254,8 @@ export function useGetMissingDays() {
   return useQuery({
     queryKey: getGetMissingDaysQueryKey(),
     queryFn: async (): Promise<MissingDay[]> => {
-      const records = await loadRecords();
-      return computeMissingDays(records);
+      const [records, vacations] = await Promise.all([loadRecords(), loadVacations()]);
+      return computeMissingDays(records, vacations);
     },
   });
 }
@@ -674,22 +674,24 @@ function dbVacationToModel(row: DatabaseVacation): VacationPeriod {
   };
 }
 
+async function loadVacations(): Promise<VacationPeriod[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from(VACATIONS_TABLE)
+    .select("id,user_id,start_date,end_date,note,created_at")
+    .eq("user_id", user.id)
+    .order("start_date", { ascending: true });
+
+  if (error) return []; // silently return empty on error (e.g. table not yet migrated)
+  return (data ?? []).map(dbVacationToModel);
+}
+
 export function useListVacations() {
   return useQuery({
     queryKey: getListVacationsQueryKey(),
-    queryFn: async (): Promise<VacationPeriod[]> => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
-
-      const { data, error } = await supabase
-        .from(VACATIONS_TABLE)
-        .select("id,user_id,start_date,end_date,note,created_at")
-        .eq("user_id", user.id)
-        .order("start_date", { ascending: true });
-
-      if (error) throw new Error(error.message);
-      return (data ?? []).map(dbVacationToModel);
-    },
+    queryFn: loadVacations,
   });
 }
 
@@ -715,7 +717,10 @@ export function useCreateVacation() {
       if (!created) throw new Error("Falha ao criar período de férias.");
       return dbVacationToModel(created as DatabaseVacation);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: getListVacationsQueryKey() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: getListVacationsQueryKey() });
+      qc.invalidateQueries({ queryKey: getGetMissingDaysQueryKey() });
+    },
   });
 }
 
@@ -749,7 +754,10 @@ export function useUpdateVacation() {
       if (!updated) throw new Error("Férias não encontradas.");
       return dbVacationToModel(updated as DatabaseVacation);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: getListVacationsQueryKey() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: getListVacationsQueryKey() });
+      qc.invalidateQueries({ queryKey: getGetMissingDaysQueryKey() });
+    },
   });
 }
 
@@ -768,7 +776,10 @@ export function useDeleteVacation() {
 
       if (error) throw new Error(error.message);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: getListVacationsQueryKey() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: getListVacationsQueryKey() });
+      qc.invalidateQueries({ queryKey: getGetMissingDaysQueryKey() });
+    },
   });
 }
 

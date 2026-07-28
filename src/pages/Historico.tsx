@@ -9,6 +9,7 @@ import {
   useExportRecords,
   useGetSettings,
   useListAdjustments,
+  useListVacations,
   useDeleteAdjustment,
   useUpdateAdjustment,
   getListRecordsQueryKey,
@@ -550,6 +551,7 @@ export default function Historico() {
   const { data: allRecords, isLoading: isLoadingAll } = useListAllRecords();
   const { data: settings } = useGetSettings();
   const { data: allAdjustments } = useListAdjustments();
+  const { data: vacations = [] } = useListVacations();
   const deleteBulk = useDeleteRecordsBulk();
   const { refetch: triggerExport } = useExportRecords({
     query: { enabled: false, queryKey: getExportRecordsQueryKey() },
@@ -780,29 +782,56 @@ export default function Historico() {
       {/* Month picker + balance + list — hidden in search mode */}
       {!isSearchMode && (
         <>
-          <div className="flex items-center justify-between bg-card border border-card-border rounded-2xl px-4 py-3 shadow-sm">
-            <button
-              data-testid="button-prev-month"
-              onClick={prevMonth}
-              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <div className="text-center">
-              <p className="font-semibold text-sm">{MONTHS[month - 1]} {year}</p>
-              {monthBalance !== null && hasItems && (
-                <p className={cn("text-xs font-mono font-medium mt-0.5", getBalanceColor(monthBalance))}>
-                  {formatMinutes(monthBalance)} no mês
-                </p>
-              )}
+          <div className="bg-card border border-card-border rounded-2xl px-4 py-3 shadow-sm space-y-2">
+            <div className="flex items-center justify-between">
+              <button
+                data-testid="button-prev-month"
+                onClick={prevMonth}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div className="text-center">
+                <p className="font-semibold text-sm">{MONTHS[month - 1]} {year}</p>
+                {monthBalance !== null && hasItems && (
+                  <p className={cn("text-xs font-mono font-medium mt-0.5", getBalanceColor(monthBalance))}>
+                    {formatMinutes(monthBalance)} no mês
+                  </p>
+                )}
+              </div>
+              <button
+                data-testid="button-next-month"
+                onClick={nextMonth}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition"
+              >
+                <ChevronRight size={18} />
+              </button>
             </div>
-            <button
-              data-testid="button-next-month"
-              onClick={nextMonth}
-              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition"
-            >
-              <ChevronRight size={18} />
-            </button>
+            {/* Vacation periods overlapping this month */}
+            {vacations
+              .filter((v) => {
+                const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+                const monthStart = `${monthStr}-01`;
+                const monthEnd = `${monthStr}-31`;
+                return v.startDate <= monthEnd && v.endDate >= monthStart;
+              })
+              .map((v) => (
+                <div
+                  key={v.id}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300"
+                >
+                  <span>🏖</span>
+                  <span className="font-medium">Férias:</span>
+                  <span className="font-mono">
+                    {v.startDate.split("-").reverse().join("/")} → {v.endDate.split("-").reverse().join("/")}
+                  </span>
+                  {v.note && (
+                    <span className="text-emerald-600 dark:text-emerald-400 opacity-70 truncate">
+                      · {v.note}
+                    </span>
+                  )}
+                </div>
+              ))}
           </div>
 
           {/* List */}

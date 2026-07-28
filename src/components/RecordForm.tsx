@@ -150,6 +150,27 @@ export function RecordForm() {
                 : "border-input focus:ring-ring",
             )}
           />
+          {/* Show vacation periods that overlap the selected date's month */}
+          {vacations
+            .filter((v) => {
+              if (!date) return false;
+              const [y, m] = date.split("-");
+              const monthStart = `${y}-${m}-01`;
+              const monthEnd = `${y}-${m}-31`;
+              return v.startDate <= monthEnd && v.endDate >= monthStart;
+            })
+            .map((v) => (
+              <div
+                key={v.id}
+                className="flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400"
+              >
+                <Palmtree size={10} className="flex-shrink-0" />
+                <span className="font-mono">
+                  {v.startDate.split("-").reverse().join("/")} → {v.endDate.split("-").reverse().join("/")}
+                </span>
+                {v.note && <span className="opacity-70 truncate">· {v.note}</span>}
+              </div>
+            ))}
         </div>
 
         <div className="col-span-2 sm:col-span-1 flex flex-col gap-1.5">

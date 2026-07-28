@@ -10,6 +10,7 @@ import type {
   Summary,
   TimeRecord,
   TimeRecordInput,
+  VacationPeriod,
 } from "./types";
 
 const SHORT_MONTHS = [
@@ -187,7 +188,10 @@ export function computeMonthlyEvolution(
   });
 }
 
-export function computeMissingDays(records: TimeRecord[]): MissingDay[] {
+export function computeMissingDays(
+  records: TimeRecord[],
+  vacations: VacationPeriod[] = [],
+): MissingDay[] {
   const recorded = new Set(records.map((r) => r.date));
   const today = new Date();
   const todayIso = today.toISOString().slice(0, 10);
@@ -200,6 +204,8 @@ export function computeMissingDays(records: TimeRecord[]): MissingDay[] {
     if (iso >= todayIso) continue;
     if (!isWorkday(iso)) continue;
     if (recorded.has(iso)) continue;
+    // Skip days that fall within a vacation period
+    if (vacations.some((v) => iso >= v.startDate && iso <= v.endDate)) continue;
     result.push({ date: iso, dayOfWeek: SHORT_DAYS[d.getDay()] });
   }
   return result.sort((a, b) => a.date.localeCompare(b.date));
