@@ -9,6 +9,7 @@ import { Layout } from "@/components/Layout";
 import Painel from "@/pages/Painel";
 import RegistrarPonto from "@/pages/RegistrarPonto";
 import Historico from "@/pages/Historico";
+import Ferias from "@/pages/Ferias";
 import Personalizacao from "@/pages/Personalizacao";
 import Configuracoes from "@/pages/Configuracoes";
 import Anual from "@/pages/Anual";
@@ -446,6 +447,7 @@ function Router({ onLogout }: { onLogout: () => void }) {
         <Route path="/" component={Painel} />
         <Route path="/registrar" component={RegistrarPonto} />
         <Route path="/historico" component={Historico} />
+        <Route path="/ferias" component={Ferias} />
         <Route path="/relatorios" component={Relatorios} />
         <Route path="/anual" component={Anual} />
         <Route path="/personalizacao" component={Personalizacao} />

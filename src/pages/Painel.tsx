@@ -1,6 +1,7 @@
 import {
   useGetSummary,
   useGetSettings,
+  useListVacations,
 } from "@/lib/api-local";
 import { EvolutionChart } from "@/components/EvolutionChart";
 import {
@@ -17,6 +18,7 @@ import {
   TrendingUp,
   TrendingDown,
   SlidersHorizontal,
+  Palmtree,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -138,9 +140,66 @@ function GoalCard({
   );
 }
 
+function VacationCard({ vacations }: { vacations: import("@/lib/types").VacationPeriod[] }) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const active = vacations.find((v) => today >= v.startDate && today <= v.endDate);
+  const upcoming = vacations
+    .filter((v) => v.startDate > today)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+
+  if (!active && !upcoming) return null;
+
+  function fmt(iso: string) {
+    const [y, m, d] = iso.split("-");
+    return `${d}/${m}/${y}`;
+  }
+  function diffDays(start: string, end: string) {
+    const s = new Date(start + "T00:00:00");
+    const e = new Date(end + "T00:00:00");
+    return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+  }
+  function daysUntil(dateISO: string) {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    const tgt = new Date(dateISO + "T00:00:00");
+    return Math.round((tgt.getTime() - t.getTime()) / 86400000);
+  }
+
+  return (
+    <div className="col-span-1 sm:col-span-2 lg:col-span-4 bg-card border border-card-border rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <Palmtree size={16} className="text-primary" />
+        <span className="text-xs font-medium text-muted-foreground">Férias</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {active && (
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-muted-foreground">Status atual</p>
+            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">🏖 Em férias agora</p>
+            <p className="text-xs text-muted-foreground">
+              Até {fmt(active.endDate)} · {diffDays(today, active.endDate)} dia{diffDays(today, active.endDate) !== 1 ? "s" : ""} restante{diffDays(today, active.endDate) !== 1 ? "s" : ""}
+            </p>
+          </div>
+        )}
+        {upcoming && (
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-muted-foreground">Próximas férias</p>
+            <p className="text-sm font-bold text-foreground">{fmt(upcoming.startDate)}</p>
+            <p className="text-xs text-muted-foreground">
+              Em {daysUntil(upcoming.startDate)} dia{daysUntil(upcoming.startDate) !== 1 ? "s" : ""} · {diffDays(upcoming.startDate, upcoming.endDate)} dias de férias
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Painel() {
   const { data: summary, isLoading } = useGetSummary();
   const { data: settings } = useGetSettings();
+  const { data: vacations = [] } = useListVacations();
 
   const balance = summary?.totalBalanceMinutes ?? 0;
   const balanceColor = getBalanceColor(balance);
@@ -187,6 +246,8 @@ export default function Painel() {
               goalMinutes={settings!.goalMinutes!}
             />
           )}
+
+          {vacations.length > 0 && <VacationCard vacations={vacations} />}
 
           <SummaryCard
             icon={Briefcase}

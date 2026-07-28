@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListRecords,
+  useListAllRecords,
   useDeleteRecord,
   useDeleteRecordsBulk,
   useUpdateRecord,
@@ -40,6 +41,7 @@ import {
   Clock,
   SlidersHorizontal,
   Calendar,
+  Search,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { ManualAdjustment, AdjustmentType } from "@/lib/types";
@@ -538,10 +540,14 @@ export default function Historico() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
+  const [searchQuery, setSearchQuery] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
 
+  const isSearchMode = searchQuery.trim().length > 0;
+
   const { data: records, isLoading } = useListRecords({ month, year });
+  const { data: allRecords, isLoading: isLoadingAll } = useListAllRecords();
   const { data: settings } = useGetSettings();
   const { data: allAdjustments } = useListAdjustments();
   const deleteBulk = useDeleteRecordsBulk();
@@ -550,6 +556,15 @@ export default function Historico() {
   });
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  // Search results across ALL records
+  const searchResults = useMemo(() => {
+    if (!isSearchMode || !allRecords) return [];
+    const q = searchQuery.trim().toLowerCase();
+    return allRecords.filter(
+      (r) => r.note && r.note.toLowerCase().includes(q),
+    );
+  }, [isSearchMode, allRecords, searchQuery]);
 
   // Adjustments for the current month
   const monthAdjustments = useMemo(() => {
@@ -704,96 +719,158 @@ export default function Historico() {
         </button>
       </div>
 
-      {/* Month picker + balance */}
-      <div className="flex items-center justify-between bg-card border border-card-border rounded-2xl px-4 py-3 shadow-sm">
-        <button
-          data-testid="button-prev-month"
-          onClick={prevMonth}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition"
-        >
-          <ChevronLeft size={18} />
-        </button>
-        <div className="text-center">
-          <p className="font-semibold text-sm">{MONTHS[month - 1]} {year}</p>
-          {monthBalance !== null && hasItems && (
-            <p className={cn("text-xs font-mono font-medium mt-0.5", getBalanceColor(monthBalance))}>
-              {formatMinutes(monthBalance)} no mês
-            </p>
-          )}
-        </div>
-        <button
-          data-testid="button-next-month"
-          onClick={nextMonth}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition"
-        >
-          <ChevronRight size={18} />
-        </button>
+      {/* Search bar */}
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="🔍 Pesquisar por observação — ex: médico, viagem, treinamento…"
+          className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition"
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
 
-      {/* List */}
-      {isLoading ? (
+      {/* Search results */}
+      {isSearchMode && (
         <div className="space-y-2">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-card border border-card-border rounded-2xl h-20 animate-pulse" />
-          ))}
-        </div>
-      ) : !hasItems ? (
-        <div className="bg-card border border-card-border rounded-2xl p-10 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-          <History size={36} className="opacity-30" />
-          <p className="text-sm">Nenhum registro em {MONTHS[month - 1]} {year}</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {/* Bulk actions bar — only for records */}
-          {(records ?? []).length > 0 && (
-            <div className="bg-card border border-card-border rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between gap-2 flex-wrap">
-              <label className="flex items-center gap-2 text-sm text-muted-foreground select-none">
-                <input
-                  ref={selectAllRef}
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleSelectAll}
-                  className="h-4 w-4 rounded border-input"
-                  aria-label="Selecionar todos"
-                />
-                Selecionar todos
-              </label>
-              {selectedCount > 0 && (
-                <button
-                  data-testid="button-delete-selected"
-                  onClick={handleDeleteSelected}
-                  disabled={deleteBulk.isPending}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:opacity-90 active:opacity-80 transition disabled:opacity-60 shadow-sm"
-                >
-                  {deleteBulk.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  <span>Excluir ({selectedCount})</span>
-                </button>
-              )}
+          <p className="text-xs text-muted-foreground px-1">
+            {isLoadingAll
+              ? "Pesquisando…"
+              : searchResults.length === 0
+              ? `Nenhuma observação encontrada para "${searchQuery}"`
+              : `${searchResults.length} resultado${searchResults.length !== 1 ? "s" : ""} para "${searchQuery}"`}
+          </p>
+          {isLoadingAll ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="bg-card border border-card-border rounded-2xl h-16 animate-pulse" />
+              ))}
             </div>
-          )}
-
-          {/* Merged items */}
-          {mergedItems.map((item) =>
-            item.kind === "record" ? (
+          ) : searchResults.length === 0 ? (
+            <div className="bg-card border border-card-border rounded-2xl p-8 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+              <MessageSquare size={32} className="opacity-30" />
+              <p className="text-sm">Nenhum registro com essa observação</p>
+            </div>
+          ) : (
+            searchResults.map((r) => (
               <EditableCard
-                key={`rec-${item.data.id}`}
-                record={item.data}
+                key={`search-${r.id}`}
+                record={r}
                 onSaved={invalidateAll}
                 onDeleted={invalidateAll}
                 defaultEntryTime={settings?.defaultEntryTime ?? "08:00"}
                 defaultExitTime={settings?.defaultExitTime ?? "17:00"}
-                selected={selectedIds.has(item.data.id)}
+                selected={selectedIds.has(r.id)}
                 onToggleSelected={toggleSelected}
               />
-            ) : (
-              <AdjustmentCard
-                key={`adj-${item.data.id}`}
-                adj={item.data}
-                onChanged={invalidateAll}
-              />
-            ),
+            ))
           )}
         </div>
+      )}
+
+      {/* Month picker + balance + list — hidden in search mode */}
+      {!isSearchMode && (
+        <>
+          <div className="flex items-center justify-between bg-card border border-card-border rounded-2xl px-4 py-3 shadow-sm">
+            <button
+              data-testid="button-prev-month"
+              onClick={prevMonth}
+              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <div className="text-center">
+              <p className="font-semibold text-sm">{MONTHS[month - 1]} {year}</p>
+              {monthBalance !== null && hasItems && (
+                <p className={cn("text-xs font-mono font-medium mt-0.5", getBalanceColor(monthBalance))}>
+                  {formatMinutes(monthBalance)} no mês
+                </p>
+              )}
+            </div>
+            <button
+              data-testid="button-next-month"
+              onClick={nextMonth}
+              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+
+          {/* List */}
+          {isLoading ? (
+            <div className="space-y-2">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-card border border-card-border rounded-2xl h-20 animate-pulse" />
+              ))}
+            </div>
+          ) : !hasItems ? (
+            <div className="bg-card border border-card-border rounded-2xl p-10 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <History size={36} className="opacity-30" />
+              <p className="text-sm">Nenhum registro em {MONTHS[month - 1]} {year}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Bulk actions bar — only for records */}
+              {(records ?? []).length > 0 && (
+                <div className="bg-card border border-card-border rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between gap-2 flex-wrap">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground select-none">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 rounded border-input"
+                      aria-label="Selecionar todos"
+                    />
+                    Selecionar todos
+                  </label>
+                  {selectedCount > 0 && (
+                    <button
+                      data-testid="button-delete-selected"
+                      onClick={handleDeleteSelected}
+                      disabled={deleteBulk.isPending}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:opacity-90 active:opacity-80 transition disabled:opacity-60 shadow-sm"
+                    >
+                      {deleteBulk.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      <span>Excluir ({selectedCount})</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Merged items */}
+              {mergedItems.map((item) =>
+                item.kind === "record" ? (
+                  <EditableCard
+                    key={`rec-${item.data.id}`}
+                    record={item.data}
+                    onSaved={invalidateAll}
+                    onDeleted={invalidateAll}
+                    defaultEntryTime={settings?.defaultEntryTime ?? "08:00"}
+                    defaultExitTime={settings?.defaultExitTime ?? "17:00"}
+                    selected={selectedIds.has(item.data.id)}
+                    onToggleSelected={toggleSelected}
+                  />
+                ) : (
+                  <AdjustmentCard
+                    key={`adj-${item.data.id}`}
+                    adj={item.data}
+                    onChanged={invalidateAll}
+                  />
+                ),
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

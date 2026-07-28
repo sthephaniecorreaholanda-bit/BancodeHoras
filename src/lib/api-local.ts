@@ -31,6 +31,9 @@ import {
   type TimeRecord,
   type TimeRecordInput,
   type TimeRecordUpdate,
+  type VacationPeriod,
+  type VacationPeriodInput,
+  type VacationPeriodUpdate,
 } from "./types";
 
 // ─── Query keys ───────────────────────────────────────────────────────────
@@ -51,6 +54,7 @@ export const getGetMissingDaysQueryKey = () =>
 export const getGetSettingsQueryKey = () => ["settings"] as const;
 export const getExportRecordsQueryKey = () => ["records", "export"] as const;
 export const getListAdjustmentsQueryKey = () => ["adjustments"] as const;
+export const getListVacationsQueryKey = () => ["vacations"] as const;
 
 // ─── Storage helpers ──────────────────────────────────────────────────────
 
@@ -65,6 +69,7 @@ type DatabaseRecord = {
   lunch_end: string | null;
   worked_minutes?: number | null;
   balance_minutes?: number | null;
+  note?: string | null;
   created_at: string;
 };
 
@@ -153,7 +158,7 @@ async function loadRecords(): Promise<TimeRecord[]> {
     const { data, error } = await supabase
       .from(RECORDS_TABLE)
       .select(
-        "id,date,type,entry_time,exit_time,lunch_start,lunch_end,worked_minutes,balance_minutes,created_at",
+        "id,date,type,entry_time,exit_time,lunch_start,lunch_end,worked_minutes,balance_minutes,note,created_at",
       )
       .eq("user_id", user.id)
       .order("date", { ascending: true });
@@ -188,7 +193,7 @@ async function loadRecords(): Promise<TimeRecord[]> {
         exitTime: row.exit_time,
         workedMinutes: finalWorked,
         balanceMinutes: finalBalance,
-        note: null,
+        note: row.note ?? null,
         createdAt: row.created_at,
       };
     });
@@ -390,6 +395,7 @@ export function useCreateRecord() {
             lunch_end: null,
             worked_minutes: workedMinutes,
             balance_minutes: balanceMinutes,
+            note: data.note ?? null,
             created_at: createdAt,
           })
           .select("*")
@@ -466,6 +472,7 @@ export function useUpdateRecord() {
             exit_time: merged.exitTime ?? null,
             worked_minutes: merged.workedMinutes,
             balance_minutes: merged.balanceMinutes,
+            note: merged.note ?? null,
           })
           .eq("id", id)
           .eq("user_id", user.id)
@@ -483,7 +490,7 @@ export function useUpdateRecord() {
           exitTime: updated.exit_time,
           workedMinutes: merged.workedMinutes,
           balanceMinutes: merged.balanceMinutes,
-          note: null,
+          note: merged.note ?? null,
           createdAt: updated.created_at,
         };
       } catch (err) {
@@ -607,6 +614,175 @@ export function useBulkGenerateMonth() {
     },
     onSuccess: () => invalidateAll(qc),
   });
+}
+
+// ─── Reset user data ───────────────────────────────────────────────────────
+
+export function useResetUserData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<void> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      // Delete all records from Horas
+      const { error: horasError } = await supabase
+        .from(RECORDS_TABLE)
+        .delete()
+        .eq("user_id", user.id);
+      if (horasError) throw new Error(horasError.message);
+
+      // Delete all vacations
+      const { error: feriasError } = await supabase
+        .from("Ferias")
+        .delete()
+        .eq("user_id", user.id);
+      if (feriasError) throw new Error(feriasError.message);
+
+      // Clear localStorage adjustments (user-scoped)
+      saveAdjustments([]);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["records"], exact: false });
+      qc.invalidateQueries({ queryKey: ["summary"], exact: false });
+      qc.invalidateQueries({ queryKey: ["adjustments"], exact: false });
+      qc.invalidateQueries({ queryKey: ["vacations"], exact: false });
+    },
+  });
+}
+
+// ─── Vacation hooks ────────────────────────────────────────────────────────
+
+const VACATIONS_TABLE = "Ferias";
+
+type DatabaseVacation = {
+  id: number;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  note: string | null;
+  created_at: string;
+};
+
+function dbVacationToModel(row: DatabaseVacation): VacationPeriod {
+  return {
+    id: row.id,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    note: row.note ?? null,
+    createdAt: row.created_at,
+  };
+}
+
+export function useListVacations() {
+  return useQuery({
+    queryKey: getListVacationsQueryKey(),
+    queryFn: async (): Promise<VacationPeriod[]> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from(VACATIONS_TABLE)
+        .select("id,user_id,start_date,end_date,note,created_at")
+        .eq("user_id", user.id)
+        .order("start_date", { ascending: true });
+
+      if (error) throw new Error(error.message);
+      return (data ?? []).map(dbVacationToModel);
+    },
+  });
+}
+
+export function useCreateVacation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ data }: { data: VacationPeriodInput }): Promise<VacationPeriod> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      const { data: created, error } = await supabase
+        .from(VACATIONS_TABLE)
+        .insert({
+          user_id: user.id,
+          start_date: data.startDate,
+          end_date: data.endDate,
+          note: data.note ?? null,
+        })
+        .select("*")
+        .single();
+
+      if (error) throw new Error(error.message);
+      if (!created) throw new Error("Falha ao criar período de férias.");
+      return dbVacationToModel(created as DatabaseVacation);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: getListVacationsQueryKey() }),
+  });
+}
+
+export function useUpdateVacation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: number;
+      data: VacationPeriodUpdate;
+    }): Promise<VacationPeriod> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      const payload: Record<string, unknown> = {};
+      if (data.startDate !== undefined) payload.start_date = data.startDate;
+      if (data.endDate !== undefined) payload.end_date = data.endDate;
+      if (data.note !== undefined) payload.note = data.note ?? null;
+
+      const { data: updated, error } = await supabase
+        .from(VACATIONS_TABLE)
+        .update(payload)
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .select("*")
+        .single();
+
+      if (error) throw new Error(error.message);
+      if (!updated) throw new Error("Férias não encontradas.");
+      return dbVacationToModel(updated as DatabaseVacation);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: getListVacationsQueryKey() }),
+  });
+}
+
+export function useDeleteVacation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: number }): Promise<void> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      const { error } = await supabase
+        .from(VACATIONS_TABLE)
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
+
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: getListVacationsQueryKey() }),
+  });
+}
+
+/** Returns true if `date` (YYYY-MM-DD) falls within any vacation period. */
+export function isDateInVacation(date: string, vacations: VacationPeriod[]): boolean {
+  return vacations.some((v) => date >= v.startDate && date <= v.endDate);
+}
+
+/** Returns the vacation period that contains `date`, or undefined. */
+export function getVacationForDate(
+  date: string,
+  vacations: VacationPeriod[],
+): VacationPeriod | undefined {
+  return vacations.find((v) => date >= v.startDate && date <= v.endDate);
 }
 
 export function useDeleteAccount() {

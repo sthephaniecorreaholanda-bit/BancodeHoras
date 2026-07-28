@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateRecord,
   useGetSettings,
+  useListVacations,
+  getVacationForDate,
   getListRecordsQueryKey,
   getGetSummaryQueryKey,
   getGetMonthlyEvolutionQueryKey,
@@ -10,7 +12,7 @@ import {
 } from "@/lib/api-local";
 import { todayISO } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { Calendar, ChevronDown, Loader2, MessageSquare, Clock } from "lucide-react";
+import { Calendar, ChevronDown, Loader2, MessageSquare, Clock, Palmtree } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const TYPES = [
@@ -23,6 +25,7 @@ export function RecordForm() {
   const [date, setDate] = useState(todayISO());
   const [type, setType] = useState("WORK_DAY");
   const { data: settings } = useGetSettings();
+  const { data: vacations = [] } = useListVacations();
   const [entryTime, setEntryTime] = useState("");
   const [exitTime, setExitTime] = useState("");
   const [note, setNote] = useState("");
@@ -39,6 +42,9 @@ export function RecordForm() {
 
   const hasTimes = type !== "HOLIDAY";
 
+  // Check if selected date falls within a vacation period
+  const vacationMatch = getVacationForDate(date, vacations);
+
   function invalidateAll() {
     qc.invalidateQueries({ queryKey: getListRecordsQueryKey() });
     qc.invalidateQueries({ queryKey: getGetSummaryQueryKey() });
@@ -48,6 +54,17 @@ export function RecordForm() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // Block registration if date is in vacation
+    if (vacationMatch) {
+      toast({
+        title: "Data em período de férias",
+        description: `Esta data está dentro do período de férias de ${formatDateBR(vacationMatch.startDate)} a ${formatDateBR(vacationMatch.endDate)}. Não é possível registrar ponto durante as férias.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const resolvedEntry =
       hasTimes && showCustomTimes
         ? entryTime || null
@@ -87,7 +104,7 @@ export function RecordForm() {
         onError: (err: unknown) => {
           const msg =
             (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
-            "Erro ao salvar registro.";
+            (err instanceof Error ? err.message : "Erro ao salvar registro.");
           toast({ title: "Erro", description: msg, variant: "destructive" });
         },
       },
@@ -103,6 +120,18 @@ export function RecordForm() {
         Registrar Dia
       </h2>
 
+      {/* Vacation warning banner */}
+      {vacationMatch && (
+        <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2.5 text-xs text-amber-800 dark:text-amber-300">
+          <Palmtree size={14} className="flex-shrink-0 mt-0.5" />
+          <span>
+            <strong>Data em período de férias</strong> (
+            {formatDateBR(vacationMatch.startDate)} → {formatDateBR(vacationMatch.endDate)}).
+            Não é possível registrar ponto durante as férias.
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 sm:col-span-1 flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
@@ -114,7 +143,12 @@ export function RecordForm() {
             value={date}
             onChange={(e) => setDate(e.target.value)}
             required
-            className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition"
+            className={cn(
+              "w-full px-3 py-2 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 transition",
+              vacationMatch
+                ? "border-amber-300 focus:ring-amber-300"
+                : "border-input focus:ring-ring",
+            )}
           />
         </div>
 
@@ -215,7 +249,7 @@ export function RecordForm() {
       <button
         data-testid="button-save-record"
         type="submit"
-        disabled={createRecord.isPending}
+        disabled={createRecord.isPending || !!vacationMatch}
         className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 active:opacity-80 transition disabled:opacity-60"
       >
         {createRecord.isPending ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -223,4 +257,9 @@ export function RecordForm() {
       </button>
     </form>
   );
+}
+
+function formatDateBR(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
 }

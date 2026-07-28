@@ -14,6 +14,7 @@ import {
   LogOut,
   X,
   MailWarning,
+  Palmtree,
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Painel de Resumo", shortLabel: "Painel", exact: true },
   { href: "/registrar", icon: ClipboardEdit, label: "Registrar Ponto", shortLabel: "Registrar", exact: false },
   { href: "/historico", icon: History, label: "Histórico", shortLabel: "Histórico", exact: false },
+  { href: "/ferias", icon: Palmtree, label: "Férias", shortLabel: "Férias", exact: false },
   { href: "/relatorios", icon: FileText, label: "Relatórios", shortLabel: "Relatórios", exact: false },
   { href: "/anual", icon: BarChart2, label: "Relatório Anual", shortLabel: "Anual", exact: false },
   { href: "/personalizacao", icon: Palette, label: "Personalização", shortLabel: "Cores", exact: false },

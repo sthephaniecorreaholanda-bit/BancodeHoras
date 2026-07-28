@@ -140,3 +140,25 @@ export const DEFAULT_SETTINGS: Settings = {
   lunchBreakMinutes: 60,
   goalMinutes: null,
 };
+
+// ─── Vacation types ────────────────────────────────────────────────────────
+
+export type VacationPeriod = {
+  id: number;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+  note: string | null;
+  createdAt: string;
+};
+
+export type VacationPeriodInput = {
+  startDate: string;
+  endDate: string;
+  note?: string | null;
+};
+
+export type VacationPeriodUpdate = {
+  startDate?: string;
+  endDate?: string;
+  note?: string | null;
+};

@@ -4,6 +4,7 @@ import {
   useGetSettings,
   useUpdateSettings,
   useDeleteAccount,
+  useResetUserData,
   useCreateAdjustment,
   useListAdjustments,
   useDeleteAdjustment,
@@ -27,12 +28,113 @@ import {
   AlertTriangle,
   SlidersHorizontal,
   Check,
+  RotateCcw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { todayISO } from "@/lib/time";
 import type { AdjustmentType } from "@/lib/types";
 
+
+// ─── Reset Data Modal ─────────────────────────────────────────────────────
+
+function ModalResetarDados({ onClose }: { onClose: () => void }) {
+  const [confirmText, setConfirmText] = useState("");
+  const { toast } = useToast();
+  const resetUserData = useResetUserData();
+
+  const confirmed = confirmText.trim().toUpperCase() === "RESETAR";
+
+  function handleOverlayClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.target === e.currentTarget) onClose();
+  }
+
+  async function handleReset() {
+    if (!confirmed) return;
+    try {
+      await resetUserData.mutateAsync();
+      toast({ title: "Dados resetados com sucesso", description: "Todos os registros foram apagados." });
+      onClose();
+    } catch (err: any) {
+      toast({
+        title: "Erro ao resetar dados",
+        description: err?.message ?? "Tente novamente.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  return (
+    <div
+      onClick={handleOverlayClick}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+    >
+      <div className="bg-card border border-card-border rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle size={20} className="text-destructive" />
+          </div>
+          <div>
+            <h2 className="font-bold text-base text-foreground">Resetar Dados</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Ação permanente e irreversível</p>
+          </div>
+        </div>
+
+        <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-2 text-sm">
+          <p className="font-semibold text-destructive uppercase tracking-wide text-xs">⚠️ ATENÇÃO</p>
+          <p className="font-semibold text-foreground">Esta ação é irreversível.</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Todos os seus registros serão apagados permanentemente:
+          </p>
+          <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+            <li>Todos os registros de banco de horas</li>
+            <li>Todos os ajustes manuais</li>
+            <li>Todos os períodos de férias</li>
+          </ul>
+          <p className="text-xs text-muted-foreground mt-1">
+            Sua conta e configurações de jornada <strong>serão mantidas</strong>.
+            O saldo voltará a zero e o banco de horas ficará sem registros.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground">
+            Digite <span className="font-mono font-bold text-destructive">RESETAR</span> para confirmar:
+          </label>
+          <input
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="RESETAR"
+            autoFocus
+            className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-destructive/50 transition font-mono uppercase"
+          />
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={onClose}
+            disabled={resetUserData.isPending}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-card-border text-sm font-medium text-muted-foreground hover:bg-accent transition disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleReset}
+            disabled={!confirmed || resetUserData.isPending}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {resetUserData.isPending ? (
+              <><Loader2 size={14} className="animate-spin" />Resetando...</>
+            ) : (
+              <><RotateCcw size={14} />Resetar Dados</>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Delete Account Modal ─────────────────────────────────────────────────
 
@@ -304,6 +406,7 @@ export default function Configuracoes() {
   const [goalSign, setGoalSign] = useState<"+" | "-">("-");
   const [goalHHMM, setGoalHHMM] = useState("00:00");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -364,6 +467,9 @@ export default function Configuracoes() {
     <>
       {showDeleteModal && (
         <ModalExcluirConta onClose={() => setShowDeleteModal(false)} />
+      )}
+      {showResetModal && (
+        <ModalResetarDados onClose={() => setShowResetModal(false)} />
       )}
 
       <div className="space-y-5 pt-1">
@@ -539,6 +645,26 @@ export default function Configuracoes() {
           <div className="bg-destructive/5 px-5 py-3 border-b border-destructive/20">
             <h3 className="font-semibold text-sm text-destructive">Zona de Perigo</h3>
           </div>
+
+          {/* Reset Data */}
+          <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-destructive/10">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">Resetar Dados</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Apaga todos os registros, ajustes e férias. Sua conta e configurações de jornada são mantidas. Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowResetModal(true)}
+              className="w-full sm:w-auto flex-shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-destructive text-destructive text-sm font-semibold hover:bg-destructive hover:text-destructive-foreground transition"
+            >
+              <RotateCcw size={15} />
+              Resetar Dados
+            </button>
+          </div>
+
+          {/* Delete Account */}
           <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">Excluir Conta</p>
