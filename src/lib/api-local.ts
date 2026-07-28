@@ -174,8 +174,11 @@ async function loadRecords(): Promise<TimeRecord[]> {
         settings,
       );
 
-      const finalWorked = recType === "COMPENSATED_LEAVE" ? workedMinutes : (row.worked_minutes ?? workedMinutes);
-      const finalBalance = recType === "COMPENSATED_LEAVE" ? balanceMinutes : (row.balance_minutes ?? balanceMinutes);
+      // Always use the freshly-recomputed values so that every record is evaluated
+      // against the current settings. Using stored DB values caused stale balances
+      // when settings changed after a record was created.
+      const finalWorked  = workedMinutes;
+      const finalBalance = balanceMinutes;
 
       return {
         id: row.id,

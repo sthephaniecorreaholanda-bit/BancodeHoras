@@ -42,34 +42,51 @@ export function computeBalanceForRecord(
   settings: Settings,
 ): { workedMinutes: number; balanceMinutes: number } {
   if (input.type === "WORK_DAY") {
+    const effectiveEntry = input.entryTime ?? settings.defaultEntryTime;
+    const effectiveExit  = input.exitTime  ?? settings.defaultExitTime;
     const standardNet = computeWorkedMinutes(
       settings.defaultEntryTime,
       settings.defaultExitTime,
       settings.lunchBreakMinutes,
     );
     const worked = computeWorkedMinutes(
-      input.entryTime ?? settings.defaultEntryTime,
-      input.exitTime ?? settings.defaultExitTime,
+      effectiveEntry,
+      effectiveExit,
       settings.lunchBreakMinutes,
     );
-    return {
-      workedMinutes: worked,
-      balanceMinutes: worked - standardNet,
-    };
+    const balance = worked - standardNet;
+
+    console.debug(
+      `[BH] computeBalance | data=${input.date} | tipo=WORK_DAY\n` +
+      `  entrada=${effectiveEntry} (registrada=${input.entryTime ?? "—"}) | saída=${effectiveExit} (registrada=${input.exitTime ?? "—"})\n` +
+      `  intervalo=${settings.lunchBreakMinutes}min\n` +
+      `  jornada_esperada: ${settings.defaultEntryTime}–${settings.defaultExitTime} → standardNet=${standardNet}min (${(standardNet/60).toFixed(2)}h)\n` +
+      `  trabalhado: ${effectiveEntry}–${effectiveExit} - ${settings.lunchBreakMinutes}min_almoço = ${worked}min (${(worked/60).toFixed(2)}h)\n` +
+      `  fórmula: worked(${worked}) - standardNet(${standardNet}) = saldo=${balance}min (${(balance/60).toFixed(2)}h)`,
+    );
+
+    return { workedMinutes: worked, balanceMinutes: balance };
   }
+
   if (input.type === "COMPENSATED_LEAVE") {
     const effectiveEntry = input.entryTime ?? settings.defaultEntryTime;
-    const effectiveExit = input.exitTime ?? settings.defaultExitTime;
+    const effectiveExit  = input.exitTime  ?? settings.defaultExitTime;
     const deductedMinutes = computeWorkedMinutes(
       effectiveEntry,
       effectiveExit,
       settings.lunchBreakMinutes,
     );
-    return {
-      workedMinutes: 0,
-      balanceMinutes: -deductedMinutes,
-    };
+
+    console.debug(
+      `[BH] computeBalance | data=${input.date} | tipo=COMPENSATED_LEAVE\n` +
+      `  entrada=${effectiveEntry} | saída=${effectiveExit} | intervalo=${settings.lunchBreakMinutes}min\n` +
+      `  fórmula: -deducted(${deductedMinutes}) = saldo=${-deductedMinutes}min`,
+    );
+
+    return { workedMinutes: 0, balanceMinutes: -deductedMinutes };
   }
+
+  console.debug(`[BH] computeBalance | data=${input.date} | tipo=${input.type} → saldo=0`);
   return { workedMinutes: 0, balanceMinutes: 0 };
 }
 

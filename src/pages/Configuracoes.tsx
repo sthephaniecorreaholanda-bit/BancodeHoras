@@ -27,12 +27,12 @@ import {
   AlertTriangle,
   SlidersHorizontal,
   Check,
-  Calendar,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { todayISO } from "@/lib/time";
 import type { AdjustmentType } from "@/lib/types";
+
 
 // ─── Delete Account Modal ─────────────────────────────────────────────────
 
@@ -133,7 +133,6 @@ function ModalExcluirConta({ onClose }: { onClose: () => void }) {
 
 function RegisterAdjustmentCard() {
   const [adjType, setAdjType] = useState<AdjustmentType>("CREDIT");
-  const [adjDate, setAdjDate] = useState(todayISO());
   const [adjHHMM, setAdjHHMM] = useState("00:00");
   const [adjReason, setAdjReason] = useState("");
   const createAdjustment = useCreateAdjustment();
@@ -150,7 +149,7 @@ function RegisterAdjustmentCard() {
       return;
     }
     createAdjustment.mutate(
-      { data: { date: adjDate, type: adjType, minutes, reason: adjReason.trim() || null } },
+      { data: { date: todayISO(), type: adjType, minutes, reason: adjReason.trim() || null } },
       {
         onSuccess: () => {
           toast({ title: adjType === "CREDIT" ? "Crédito registrado" : "Débito registrado" });
@@ -197,30 +196,16 @@ function RegisterAdjustmentCard() {
           ))}
         </div>
 
-        {/* Data + Quantidade */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <Calendar size={11} /> Data
-            </label>
-            <input
-              type="date"
-              value={adjDate}
-              onChange={(e) => setAdjDate(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Quantidade (HH:MM)</label>
-            <input
-              type="time"
-              value={adjHHMM}
-              onChange={(e) => setAdjHHMM(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
-            />
-          </div>
+        {/* Quantidade */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Quantidade (HH:MM)</label>
+          <input
+            type="time"
+            value={adjHHMM}
+            onChange={(e) => setAdjHHMM(e.target.value)}
+            required
+            className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
+          />
         </div>
 
         {/* Motivo */}
