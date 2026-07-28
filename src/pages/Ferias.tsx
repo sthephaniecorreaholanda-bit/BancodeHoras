@@ -4,6 +4,7 @@ import {
   useCreateVacation,
   useUpdateVacation,
   useDeleteVacation,
+  useVacationsMigrationReady,
 } from "@/lib/api-local";
 import type { VacationPeriod } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -436,6 +437,7 @@ type SortMode = "date-asc" | "date-desc";
 
 export default function Ferias() {
   const { data: vacations = [], isLoading } = useListVacations();
+  const { data: migrationReady } = useVacationsMigrationReady();
   const createVacation = useCreateVacation();
   const { toast } = useToast();
 
@@ -487,7 +489,7 @@ export default function Ferias() {
           <Palmtree size={20} className="text-primary flex-shrink-0" />
           Gestão de Férias
         </h1>
-        {!showAddForm && (
+        {!showAddForm && migrationReady && (
           <button
             onClick={() => setShowAddForm(true)}
             className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:opacity-90 transition shadow-sm flex-shrink-0"
@@ -499,11 +501,25 @@ export default function Ferias() {
         )}
       </div>
 
+      {/* Migration notice — shown when the Ferias table does not exist yet */}
+      {migrationReady === false && (
+        <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 text-sm">
+          <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-800 dark:text-amber-300">Migration do banco de dados necessária</p>
+            <p className="text-amber-700 dark:text-amber-400 text-xs leading-relaxed">
+              A funcionalidade de Férias precisa de uma atualização no banco Supabase. Acesse o <strong>SQL Editor</strong> do seu projeto Supabase e execute o arquivo{" "}
+              <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">supabase/migrations/002_ferias_e_nota.sql</code>.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       {!isLoading && vacations.length > 0 && <VacationStats vacations={vacations} />}
 
       {/* Add form */}
-      {showAddForm && (
+      {showAddForm && migrationReady && (
         <div className="bg-card border border-primary/30 ring-1 ring-primary/20 rounded-2xl p-5 shadow-sm">
           <VacationForm
             title="Cadastrar Férias"

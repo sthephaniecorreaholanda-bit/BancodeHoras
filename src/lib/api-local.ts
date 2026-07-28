@@ -632,12 +632,8 @@ export function useResetUserData() {
         .eq("user_id", user.id);
       if (horasError) throw new Error(horasError.message);
 
-      // Delete all vacations
-      const { error: feriasError } = await supabase
-        .from("Ferias")
-        .delete()
-        .eq("user_id", user.id);
-      if (feriasError) throw new Error(feriasError.message);
+      // Delete all vacations (silently skip if Ferias table does not exist yet)
+      await supabase.from("Ferias").delete().eq("user_id", user.id);
 
       // Clear localStorage adjustments (user-scoped)
       saveAdjustments([]);
@@ -675,23 +671,56 @@ function dbVacationToModel(row: DatabaseVacation): VacationPeriod {
 }
 
 async function loadVacations(): Promise<VacationPeriod[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
 
-  const { data, error } = await supabase
-    .from(VACATIONS_TABLE)
-    .select("id,user_id,start_date,end_date,note,created_at")
-    .eq("user_id", user.id)
-    .order("start_date", { ascending: true });
+    const { data, error } = await supabase
+      .from(VACATIONS_TABLE)
+      .select("id,user_id,start_date,end_date,note,created_at")
+      .eq("user_id", user.id)
+      .order("start_date", { ascending: true });
 
-  if (error) return []; // silently return empty on error (e.g. table not yet migrated)
-  return (data ?? []).map(dbVacationToModel);
+    if (error) return []; // table may not be migrated yet
+    return (data ?? []).map(dbVacationToModel);
+  } catch {
+    return [];
+  }
 }
+
+/** True if `error.message` indicates the Ferias table has not been created yet. */
+function isMissingTableError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("Ferias") && (msg.includes("schema cache") || msg.includes("does not exist"));
+}
+
+const MIGRATION_HINT =
+  "A tabela de férias ainda não foi criada no banco de dados. " +
+  "Aplique a migration 002_ferias_e_nota.sql no painel do Supabase para ativar esta funcionalidade.";
 
 export function useListVacations() {
   return useQuery({
     queryKey: getListVacationsQueryKey(),
     queryFn: loadVacations,
+  });
+}
+
+/** Returns true when the Ferias table exists and the migration has been applied. */
+export function useVacationsMigrationReady() {
+  return useQuery({
+    queryKey: ["vacations-migration-ready"],
+    queryFn: async (): Promise<boolean> => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return false;
+        const { error } = await supabase.from(VACATIONS_TABLE).select("id").limit(1);
+        return !error;
+      } catch {
+        return false;
+      }
+    },
+    staleTime: 5 * 60 * 1000, // cache result for 5 min, no need to check on every render
+    retry: false,
   });
 }
 
@@ -713,7 +742,7 @@ export function useCreateVacation() {
         .select("*")
         .single();
 
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(isMissingTableError(error.message) ? MIGRATION_HINT : error.message);
       if (!created) throw new Error("Falha ao criar período de férias.");
       return dbVacationToModel(created as DatabaseVacation);
     },
@@ -750,7 +779,7 @@ export function useUpdateVacation() {
         .select("*")
         .single();
 
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(isMissingTableError(error.message) ? MIGRATION_HINT : error.message);
       if (!updated) throw new Error("Férias não encontradas.");
       return dbVacationToModel(updated as DatabaseVacation);
     },
@@ -774,7 +803,7 @@ export function useDeleteVacation() {
         .eq("id", id)
         .eq("user_id", user.id);
 
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(isMissingTableError(error.message) ? MIGRATION_HINT : error.message);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: getListVacationsQueryKey() });
