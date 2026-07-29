@@ -254,14 +254,22 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
 
     const lastSaldo = data[data.length - 1].saldo;
     const periodBalance = lastSaldo - startingBalance;
-    const recordCount = (records ?? []).length;
-    const avgDaily = recordCount > 0 ? Math.round(periodBalance / recordCount) : 0;
+
+    // Credit = sum of positive daily movements; Debit = sum of absolute negative daily movements
+    let creditMinutes = 0;
+    let debitMinutes = 0;
+    for (const entry of data) {
+      const delta = entry.balanceMinutes + (entry.adjustmentMinutes ?? 0);
+      if (delta > 0) creditMinutes += delta;
+      else if (delta < 0) debitMinutes += Math.abs(delta);
+    }
 
     return {
       chartData: data,
       summaryStats: {
         saldoPeriodo: periodBalance,
-        mediaDiaria: avgDaily,
+        creditoPeriodo: creditMinutes,
+        debitoPeriodo: debitMinutes,
       },
     };
   }, [records, allAdjustments, startingBalance, month, year]);
@@ -334,16 +342,22 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
       {summaryStats && (
         <div className="flex gap-2 sm:gap-3">
           <MiniCard
+            label="Crédito do Período"
+            value={formatMinutes(summaryStats.creditoPeriodo)}
+            minutes={summaryStats.creditoPeriodo}
+            icon={TrendingUp}
+          />
+          <MiniCard
+            label="Débito do Período"
+            value={formatMinutes(-summaryStats.debitoPeriodo)}
+            minutes={-summaryStats.debitoPeriodo}
+            icon={TrendingDown}
+          />
+          <MiniCard
             label="Saldo do Período"
             value={formatMinutes(summaryStats.saldoPeriodo)}
             minutes={summaryStats.saldoPeriodo}
             icon={periodIcon}
-          />
-          <MiniCard
-            label="Média diária"
-            value={formatMinutes(summaryStats.mediaDiaria)}
-            minutes={summaryStats.mediaDiaria}
-            icon={Minus}
           />
         </div>
       )}
