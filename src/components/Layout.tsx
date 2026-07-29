@@ -257,11 +257,6 @@ export function Layout({
           </div>
           <div className="flex flex-col leading-tight">
             <span className="font-semibold text-sm tracking-tight">Banco de Horas</span>
-            {currentUser && (
-              <span className="text-[11px] text-muted-foreground truncate max-w-[160px]">
-                {currentUser}
-              </span>
-            )}
           </div>
         </div>
 
