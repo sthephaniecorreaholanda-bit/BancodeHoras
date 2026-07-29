@@ -612,6 +612,16 @@ export function EvolutionChart() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
 
+  const { data: evolution } = useGetMonthlyEvolution();
+
+  const currentBalance = useMemo(() => {
+    if (!evolution?.length) return null;
+    const entry = evolution.find((e) => e.month === month && e.year === year);
+    return entry?.cumulativeBalanceMinutes ?? null;
+  }, [evolution, month, year]);
+
+  const balClr = currentBalance != null ? balanceColor(currentBalance) : "hsl(var(--muted-foreground))";
+
   return (
     <div className="bg-card border border-card-border rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
       {/* Header */}
@@ -621,8 +631,13 @@ export function EvolutionChart() {
             Banco de Horas
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Evolução do saldo acumulado
+            Período: {MONTHS[month - 1]}/{year}
           </p>
+          {currentBalance != null && (
+            <p className="text-xs mt-0.5 font-mono font-semibold" style={{ color: balClr }}>
+              Saldo atual: {formatMinutes(currentBalance)}
+            </p>
+          )}
         </div>
 
         {/* View toggle */}

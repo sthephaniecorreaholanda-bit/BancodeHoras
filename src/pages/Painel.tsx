@@ -8,6 +8,7 @@ import {
   formatMinutes,
   getBalanceColor,
   getBalanceBg,
+  minutesToHHMM,
 } from "@/lib/time";
 import {
   Briefcase,
@@ -263,6 +264,11 @@ export default function Painel() {
             icon={CalendarX2}
             label="Feriados / Folgas"
             value={String(summary?.holidays ?? 0)}
+          />
+          <SummaryCard
+            icon={Clock}
+            label="Horas Trabalhadas"
+            value={minutesToHHMM(summary?.workedMinutes ?? 0)}
           />
         </div>
       )}
