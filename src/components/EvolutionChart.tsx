@@ -64,56 +64,51 @@ function AdvancedTooltip({ active, payload }: any) {
 
   const [y, m, day] = d.fullDate.split("-");
   const dateStr = `${day}/${m}/${y}`;
-  const deltaLabel = d.balanceMinutes >= 0 ? "Crédito do dia" : "Débito do dia";
-  const saldoClr = balanceColor(d.saldo);
-  const deltaClr = balanceColor(d.balanceMinutes);
+
+  // Total daily movement = record balance + any adjustment
+  const dailyDelta = d.balanceMinutes + (d.adjustmentMinutes ?? 0);
+  const saldoAnterior = d.saldo - dailyDelta;
+
+  const deltaLabel = dailyDelta >= 0 ? "Crédito do dia" : "Débito do dia";
 
   return (
     <div
       className="rounded-2xl border border-border bg-popover shadow-2xl text-xs"
-      style={{ minWidth: 200, padding: "12px 14px" }}
+      style={{ minWidth: 210, padding: "12px 14px" }}
     >
       <p className="font-semibold text-foreground mb-2.5 text-sm">{dateStr}</p>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-5">
-          <span className="text-muted-foreground">Saldo acumulado</span>
-          <span className="font-bold font-mono" style={{ color: saldoClr }}>
+          <span className="text-muted-foreground">Saldo anterior</span>
+          <span
+            className="font-mono font-medium"
+            style={{ color: balanceColor(saldoAnterior) }}
+          >
+            {formatMinutes(saldoAnterior)}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between gap-5">
+          <span className="text-muted-foreground">{deltaLabel}</span>
+          <span
+            className="font-mono font-semibold"
+            style={{ color: balanceColor(dailyDelta) }}
+          >
+            {formatMinutes(dailyDelta)}
+          </span>
+        </div>
+
+        <div className="h-px bg-border my-1" />
+
+        <div className="flex items-center justify-between gap-5">
+          <span className="font-semibold text-foreground">Saldo final</span>
+          <span
+            className="font-bold font-mono"
+            style={{ color: balanceColor(d.saldo) }}
+          >
             {formatMinutes(d.saldo)}
           </span>
         </div>
-        {d.workedMinutes > 0 && (
-          <div className="flex items-center justify-between gap-5">
-            <span className="text-muted-foreground">Horas trabalhadas</span>
-            <span className="font-mono text-foreground">
-              {formatMinutes(d.workedMinutes)}
-            </span>
-          </div>
-        )}
-        {d.balanceMinutes !== 0 && (
-          <>
-            <div className="h-px bg-border my-0.5" />
-            <div className="flex items-center justify-between gap-5">
-              <span className="text-muted-foreground">{deltaLabel}</span>
-              <span className="font-bold font-mono" style={{ color: deltaClr }}>
-                {formatMinutes(d.balanceMinutes)}
-              </span>
-            </div>
-          </>
-        )}
-        {d.adjustmentMinutes !== undefined && d.adjustmentMinutes !== 0 && (
-          <>
-            {d.balanceMinutes === 0 && <div className="h-px bg-border my-0.5" />}
-            <div className="flex items-center justify-between gap-5">
-              <span className="text-muted-foreground">Ajuste manual</span>
-              <span
-                className="font-bold font-mono"
-                style={{ color: balanceColor(d.adjustmentMinutes) }}
-              >
-                {formatMinutes(d.adjustmentMinutes)}
-              </span>
-            </div>
-          </>
-        )}
       </div>
     </div>
   );
