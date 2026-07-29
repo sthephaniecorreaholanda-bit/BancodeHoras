@@ -353,12 +353,6 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
             minutes={-summaryStats.debitoPeriodo}
             icon={TrendingDown}
           />
-          <MiniCard
-            label="Saldo do Período"
-            value={formatMinutes(summaryStats.saldoPeriodo)}
-            minutes={summaryStats.saldoPeriodo}
-            icon={periodIcon}
-          />
         </div>
       )}
 

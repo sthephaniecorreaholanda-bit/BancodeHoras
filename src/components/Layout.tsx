@@ -322,8 +322,6 @@ export function Layout({
         {emailUnconfirmed && user.email && (
           <EmailConfirmationBanner email={user.email} />
         )}
-        {/* Balance widget — sticky header bar */}
-        <BalanceWidget />
         <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
           {children}
         </div>

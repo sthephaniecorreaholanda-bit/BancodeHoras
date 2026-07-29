@@ -264,12 +264,6 @@ export default function Painel() {
             label="Feriados / Folgas"
             value={String(summary?.holidays ?? 0)}
           />
-          <SummaryCard
-            icon={SlidersHorizontal}
-            label="Ajustes Manuais"
-            value={formatMinutes(adjMinutes)}
-            colorClass={adjMinutes !== 0 ? getBalanceColor(adjMinutes) : undefined}
-          />
         </div>
       )}
 
