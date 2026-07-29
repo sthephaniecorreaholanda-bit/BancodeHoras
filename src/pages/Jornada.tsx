@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  CopyCheck,
   Info,
   Loader2,
   Plus,
@@ -161,8 +162,29 @@ function ScheduleForm({ onSaved }: { onSaved: () => void }) {
     );
   });
 
+  const [defaultEntry, setDefaultEntry] = useState("08:00");
+  const [defaultExit, setDefaultExit] = useState("17:00");
+  const [defaultLunch, setDefaultLunch] = useState(60);
+
   const addSchedule = useAddSchedule();
   const { toast } = useToast();
+
+  function applyDefaultToActive() {
+    setDays((prev) => {
+      const next = { ...prev };
+      for (const dow of [0, 1, 2, 3, 4, 5, 6]) {
+        if (next[dow]?.active) {
+          next[dow] = {
+            ...next[dow],
+            entryTime: defaultEntry,
+            exitTime: defaultExit,
+            lunchBreakMinutes: defaultLunch,
+          };
+        }
+      }
+      return next;
+    });
+  }
 
   function applyProfile(profileKey: string) {
     const profile = SCHEDULE_PROFILES.find((p) => p.key === profileKey);
@@ -250,6 +272,57 @@ function ScheduleForm({ onSaved }: { onSaved: () => void }) {
             onChange={(e) => setEffectiveFrom(e.target.value)}
             className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition"
           />
+        </div>
+      </div>
+
+      {/* Default schedule */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+          <Clock size={12} /> Jornada padrão
+        </p>
+        <div className="rounded-xl border border-card-border bg-muted/30 p-3 space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground w-14">Entrada</span>
+              <input
+                type="time"
+                value={defaultEntry}
+                onChange={(e) => setDefaultEntry(e.target.value)}
+                className="w-[90px] px-2 py-1 rounded-lg border border-input bg-background text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground w-14">Saída</span>
+              <input
+                type="time"
+                value={defaultExit}
+                onChange={(e) => setDefaultExit(e.target.value)}
+                className="w-[90px] px-2 py-1 rounded-lg border border-input bg-background text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <UtensilsCrossed size={11} className="text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Intervalo</span>
+              <input
+                type="number"
+                value={defaultLunch}
+                onChange={(e) => setDefaultLunch(Math.max(0, Number(e.target.value)))}
+                min={0}
+                max={240}
+                step={5}
+                className="w-16 px-2 py-1 rounded-lg border border-input bg-background text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <span className="text-xs text-muted-foreground">min</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={applyDefaultToActive}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-primary/40 bg-primary/5 text-primary text-xs font-medium hover:bg-primary/10 transition"
+          >
+            <CopyCheck size={13} />
+            Aplicar aos dias ativos
+          </button>
         </div>
       </div>
 
