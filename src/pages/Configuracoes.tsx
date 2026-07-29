@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   useGetSettings,
   useUpdateSettings,
@@ -22,13 +23,14 @@ import {
   Info,
   Loader2,
   Save,
-  UtensilsCrossed,
   Target,
   Trash2,
   AlertTriangle,
   SlidersHorizontal,
   Check,
   RotateCcw,
+  CalendarDays,
+  ArrowRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -83,9 +85,6 @@ function ModalResetarDados({ onClose }: { onClose: () => void }) {
         <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-2 text-sm">
           <p className="font-semibold text-destructive uppercase tracking-wide text-xs">⚠️ ATENÇÃO</p>
           <p className="font-semibold text-foreground">Esta ação é irreversível.</p>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            Todos os seus registros serão apagados permanentemente:
-          </p>
           <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
             <li>Todos os registros de banco de horas</li>
             <li>Todos os ajustes manuais</li>
@@ -93,7 +92,6 @@ function ModalResetarDados({ onClose }: { onClose: () => void }) {
           </ul>
           <p className="text-xs text-muted-foreground mt-1">
             Sua conta e configurações de jornada <strong>serão mantidas</strong>.
-            O saldo voltará a zero e o banco de horas ficará sem registros.
           </p>
         </div>
 
@@ -181,9 +179,6 @@ function ModalExcluirConta({ onClose }: { onClose: () => void }) {
         <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-2 text-sm">
           <p className="font-semibold text-destructive uppercase tracking-wide text-xs">⚠️ ATENÇÃO</p>
           <p className="font-semibold text-foreground">Esta ação é irreversível.</p>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            Todos os lançamentos, históricos, relatórios e dados associados à sua conta serão removidos permanentemente:
-          </p>
           <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
             <li>Todos os registros de banco de horas</li>
             <li>Histórico de pontos e relatórios</li>
@@ -277,7 +272,6 @@ function RegisterAdjustmentCard() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        {/* Tipo */}
         <div className="grid grid-cols-2 gap-2">
           {(["CREDIT", "DEBIT"] as const).map((t) => (
             <button
@@ -298,7 +292,6 @@ function RegisterAdjustmentCard() {
           ))}
         </div>
 
-        {/* Quantidade */}
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Quantidade (HH:MM)</label>
           <input
@@ -310,7 +303,6 @@ function RegisterAdjustmentCard() {
           />
         </div>
 
-        {/* Motivo */}
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">
             Motivo <span className="opacity-60">(opcional)</span>
@@ -344,7 +336,6 @@ function RegisterAdjustmentCard() {
         </button>
       </form>
 
-      {/* Recent adjustments list */}
       {adjustments && adjustments.length > 0 && (
         <div className="border-t border-card-border pt-3 space-y-2">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -399,9 +390,6 @@ export default function Configuracoes() {
   const { data: settings, isLoading } = useGetSettings();
   const updateSettings = useUpdateSettings();
 
-  const [entryHHMM, setEntryHHMM] = useState("08:00");
-  const [exitHHMM, setExitHHMM] = useState("17:00");
-  const [lunchHHMM, setLunchHHMM] = useState("01:00");
   const [goalEnabled, setGoalEnabled] = useState(false);
   const [goalSign, setGoalSign] = useState<"+" | "-">("-");
   const [goalHHMM, setGoalHHMM] = useState("00:00");
@@ -410,9 +398,6 @@ export default function Configuracoes() {
 
   useEffect(() => {
     if (settings) {
-      setEntryHHMM(settings.defaultEntryTime);
-      setExitHHMM(settings.defaultExitTime);
-      setLunchHHMM(minutesToHHMM(settings.lunchBreakMinutes));
       if (settings.goalMinutes !== null && settings.goalMinutes !== undefined) {
         setGoalEnabled(true);
         setGoalSign(settings.goalMinutes < 0 ? "-" : "+");
@@ -425,10 +410,8 @@ export default function Configuracoes() {
     }
   }, [settings]);
 
-  function handleSave(e: React.FormEvent) {
+  function handleSaveGoal(e: React.FormEvent) {
     e.preventDefault();
-    const lunchBreakMinutes = hhmmToMinutes(lunchHHMM);
-
     let goalMinutes: number | null = null;
     if (goalEnabled) {
       const rawGoal = hhmmToMinutes(goalHHMM);
@@ -436,17 +419,10 @@ export default function Configuracoes() {
     }
 
     updateSettings.mutate(
-      {
-        data: {
-          defaultEntryTime: entryHHMM,
-          defaultExitTime: exitHHMM,
-          lunchBreakMinutes,
-          goalMinutes,
-        },
-      },
+      { data: { goalMinutes } },
       {
         onSuccess: () => {
-          toast({ title: "Configurações salvas" });
+          toast({ title: "Meta salva" });
           qc.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetSummaryQueryKey() });
         },
@@ -475,169 +451,102 @@ export default function Configuracoes() {
       <div className="space-y-5 pt-1">
         <h1 className="text-2xl md:text-lg font-semibold flex items-center gap-2">
           <Settings2 size={20} className="text-primary flex-shrink-0" />
-          Configurações da Jornada
+          Configurações
         </h1>
 
-        <form onSubmit={handleSave} className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-4">
-          {/* Jornada padrão */}
-          <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-3">
-            <div>
-              <h2 className="font-semibold text-sm">Jornada Padrão</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Horários usados como base quando você não informar Entrada/Saída no dia.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Hora de Entrada</label>
-                <input
-                  data-testid="input-default-entry"
-                  type="time"
-                  value={entryHHMM}
-                  onChange={(e) => setEntryHHMM(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
-                />
+        {/* Jornada shortcut */}
+        <Link href="/jornada">
+          <div className="flex items-center justify-between gap-3 bg-card border border-primary/30 rounded-2xl p-4 shadow-sm hover:bg-primary/5 transition-colors cursor-pointer group">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <CalendarDays size={18} className="text-primary" />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Hora de Saída</label>
-                <input
-                  data-testid="input-default-exit"
-                  type="time"
-                  value={exitHHMM}
-                  onChange={(e) => setExitHHMM(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Lunch break */}
-          <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-3">
-            <div className="flex items-center gap-2">
-              <UtensilsCrossed size={15} className="text-primary flex-shrink-0" />
               <div>
-                <h2 className="font-semibold text-sm">Tempo de Almoço</h2>
+                <p className="font-semibold text-sm text-foreground">Jornada de Trabalho</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Deduzido automaticamente do tempo total. Padrão: 01:00.
+                  Configure horários, dias úteis, perfis e histórico de vigências
                 </p>
               </div>
             </div>
-            <input
-              data-testid="input-lunch-break"
-              type="time"
-              value={lunchHHMM}
-              onChange={(e) => setLunchHHMM(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
-            />
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted rounded-xl px-3 py-2">
-              <Info size={13} className="flex-shrink-0" />
-              <span>
-                Exemplo: {entryHHMM} → {exitHHMM} ={" "}
-                {minutesToHHMM(Math.max(0, hhmmToMinutes(exitHHMM) - hhmmToMinutes(entryHHMM)))} −{" "}
-                {minutesToHHMM(hhmmToMinutes(lunchHHMM))} almoço ={" "}
-                <span className="font-mono font-medium text-foreground">
-                  {minutesToHHMM(
-                    Math.max(
-                      0,
-                      hhmmToMinutes(exitHHMM) - hhmmToMinutes(entryHHMM) - hhmmToMinutes(lunchHHMM),
-                    ),
-                  )}{" "}
-                  trabalhados
-                </span>
-              </span>
-            </div>
+            <ArrowRight size={16} className="text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
           </div>
+        </Link>
 
-          {/* Goal */}
-          <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Target size={15} className="text-primary flex-shrink-0" />
-                <div>
-                  <h2 className="font-semibold text-sm">Meta de Saldo</h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Defina um saldo-alvo para acompanhar seu progresso no Painel.
-                  </p>
-                </div>
+        {/* Goal */}
+        <form onSubmit={handleSaveGoal} className="bg-card border border-card-border rounded-2xl p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Target size={15} className="text-primary flex-shrink-0" />
+              <div>
+                <h2 className="font-semibold text-sm">Meta de Saldo</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Defina um saldo-alvo para acompanhar seu progresso no Painel.
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setGoalEnabled((v) => !v)}
+            </div>
+            <button
+              type="button"
+              onClick={() => setGoalEnabled((v) => !v)}
+              className={cn(
+                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0",
+                goalEnabled ? "bg-primary" : "bg-muted-foreground/30",
+              )}
+            >
+              <span
                 className={cn(
-                  "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0",
-                  goalEnabled ? "bg-primary" : "bg-muted-foreground/30",
+                  "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                  goalEnabled ? "translate-x-6" : "translate-x-1",
                 )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
-                    goalEnabled ? "translate-x-6" : "translate-x-1",
-                  )}
+              />
+            </button>
+          </div>
+
+          {goalEnabled && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <select
+                  value={goalSign}
+                  onChange={(e) => setGoalSign(e.target.value as "+" | "-")}
+                  className="px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono w-16"
+                >
+                  <option value="+">+</option>
+                  <option value="-">−</option>
+                </select>
+                <input
+                  type="time"
+                  value={goalHHMM}
+                  onChange={(e) => setGoalHHMM(e.target.value)}
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
                 />
-              </button>
-            </div>
-
-            {goalEnabled && (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <select
-                    value={goalSign}
-                    onChange={(e) => setGoalSign(e.target.value as "+" | "-")}
-                    className="px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono w-16"
-                  >
-                    <option value="+">+</option>
-                    <option value="-">−</option>
-                  </select>
-                  <input
-                    data-testid="input-goal-minutes"
-                    type="time"
-                    value={goalHHMM}
-                    onChange={(e) => setGoalHHMM(e.target.value)}
-                    className="flex-1 px-3 py-2.5 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring transition font-mono"
-                  />
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted rounded-xl px-3 py-2">
-                  <Info size={13} className="flex-shrink-0" />
-                  <span>
-                    Meta: saldo acumulado de{" "}
-                    <span className="font-mono font-medium text-foreground">
-                      {goalSign}{minutesToHHMM(hhmmToMinutes(goalHHMM))}
-                    </span>
-                    {" "}— use <strong>−00:00</strong> para zerar o banco.
-                  </span>
-                </div>
               </div>
-            )}
-          </div>
-
-          {/* Info box */}
-          <div className="lg:col-span-2 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 text-xs text-blue-700 dark:text-blue-300 space-y-1.5">
-            <p className="font-semibold">Regras do sistema</p>
-            <ul className="space-y-1 list-disc list-inside">
-              <li>Jornada padrão é usada quando o dia não tiver horários informados</li>
-              <li>Almoço é descontado automaticamente do total (Saída − Entrada − Almoço)</li>
-              <li>Dia Comum: saldo = tempo trabalhado − jornada padrão líquida</li>
-              <li>Folga compensada debita a jornada líquida do dia informado</li>
-              <li>Feriados nacionais e domingos são neutros automaticamente</li>
-            </ul>
-          </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted rounded-xl px-3 py-2">
+                <Info size={13} className="flex-shrink-0" />
+                <span>
+                  Meta: saldo acumulado de{" "}
+                  <span className="font-mono font-medium text-foreground">
+                    {goalSign}{minutesToHHMM(hhmmToMinutes(goalHHMM))}
+                  </span>
+                  {" "}— use <strong>−00:00</strong> para zerar o banco.
+                </span>
+              </div>
+            </div>
+          )}
 
           <button
-            data-testid="button-save-settings"
             type="submit"
             disabled={updateSettings.isPending}
-            className="lg:col-span-2 w-full py-3 rounded-2xl bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 active:opacity-80 transition disabled:opacity-60 shadow-sm"
+            className="w-full py-2.5 rounded-2xl bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 active:opacity-80 transition disabled:opacity-60 shadow-sm"
           >
             {updateSettings.isPending ? (
               <Loader2 size={16} className="animate-spin" />
             ) : (
               <Save size={16} />
             )}
-            Salvar Configurações
+            Salvar Meta
           </button>
         </form>
 
-        {/* Manual Adjustment — standalone section */}
+        {/* Manual Adjustment */}
         <RegisterAdjustmentCard />
 
         {/* Danger zone */}
@@ -646,12 +555,11 @@ export default function Configuracoes() {
             <h3 className="font-semibold text-sm text-destructive">Zona de Perigo</h3>
           </div>
 
-          {/* Reset Data */}
           <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-destructive/10">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">Resetar Dados</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Apaga todos os registros, ajustes e férias. Sua conta e configurações de jornada são mantidas. Esta ação não pode ser desfeita.
+                Apaga todos os registros, ajustes e férias. Sua conta e configurações de jornada são mantidas.
               </p>
             </div>
             <button
@@ -664,12 +572,11 @@ export default function Configuracoes() {
             </button>
           </div>
 
-          {/* Delete Account */}
           <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">Excluir Conta</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Remove permanentemente sua conta e todos os dados associados. Esta ação não pode ser desfeita.
+                Remove permanentemente sua conta e todos os dados associados.
               </p>
             </div>
             <button

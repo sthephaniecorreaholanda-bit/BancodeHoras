@@ -14,6 +14,7 @@ import Personalizacao from "@/pages/Personalizacao";
 import Configuracoes from "@/pages/Configuracoes";
 import Anual from "@/pages/Anual";
 import Relatorios from "@/pages/Relatorios";
+import Jornada from "@/pages/Jornada";
 import NotFound from "@/pages/not-found";
 import { supabase, isSupabaseConfigured, getSiteUrl } from "@/lib/supabaseClient";
 import { useAuth, NO_REMEMBER_KEY, SESSION_ACTIVE_KEY } from "@/hooks/use-auth";
@@ -450,6 +451,7 @@ function Router({ onLogout }: { onLogout: () => void }) {
         <Route path="/ferias" component={Ferias} />
         <Route path="/relatorios" component={Relatorios} />
         <Route path="/anual" component={Anual} />
+        <Route path="/jornada" component={Jornada} />
         <Route path="/personalizacao" component={Personalizacao} />
         <Route path="/configuracoes" component={Configuracoes} />
         <Route component={NotFound} />

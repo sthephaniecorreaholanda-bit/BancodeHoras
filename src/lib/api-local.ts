@@ -16,6 +16,8 @@ import {
   filterByMonth,
   recordsToCsv,
 } from "./calculations";
+import { scheduleFromSettings, standardMinutesForDate, isWorkdayBySchedule } from "./schedule";
+import { isHoliday } from "./holidays";
 import {
   DEFAULT_SETTINGS,
   type BulkGenerateBody,
@@ -25,6 +27,7 @@ import {
   type ManualAdjustmentInput,
   type MissingDay,
   type MonthlyEvolution,
+  type MonthStats,
   type Settings,
   type SettingsUpdate,
   type Summary,
@@ -34,6 +37,8 @@ import {
   type VacationPeriod,
   type VacationPeriodInput,
   type VacationPeriodUpdate,
+  type WorkSchedule,
+  type WorkScheduleInput,
 } from "./types";
 
 // ─── Query keys ───────────────────────────────────────────────────────────
@@ -52,6 +57,8 @@ export const getGetMonthlyEvolutionQueryKey = () =>
 export const getGetMissingDaysQueryKey = () =>
   ["summary", "missing-days"] as const;
 export const getGetSettingsQueryKey = () => ["settings"] as const;
+export const getGetSchedulesQueryKey = () => ["schedules"] as const;
+export const getGetMonthStatsQueryKey = () => ["summary", "month-stats"] as const;
 export const getExportRecordsQueryKey = () => ["records", "export"] as const;
 export const getListAdjustmentsQueryKey = () => ["adjustments"] as const;
 export const getListVacationsQueryKey = () => ["vacations"] as const;
@@ -76,6 +83,7 @@ type DatabaseRecord = {
 const RECORDS_TABLE = "Horas";
 const SETTINGS_KEY = "bh:settings";
 const ADJUSTMENTS_KEY = "bh:adjustments";
+const SCHEDULES_KEY = "bh:schedules";
 const MIGRATION_V1_KEY = "bh:migration-adj-v1";
 
 type LegacySettings = Partial<Settings> & {
@@ -86,7 +94,6 @@ type LegacySettings = Partial<Settings> & {
 /**
  * One-time migration: converts the old permanent `manualAdjustmentMinutes`
  * setting into a proper transaction-based ManualAdjustment entry.
- * Runs once (guarded by MIGRATION_V1_KEY in localStorage).
  */
 function runMigrations(raw: LegacySettings): void {
   const done = localStorage.getItem(MIGRATION_V1_KEY);
@@ -116,7 +123,6 @@ function runMigrations(raw: LegacySettings): void {
 function loadSettings(): Settings {
   const raw = readKey<LegacySettings>(SETTINGS_KEY, DEFAULT_SETTINGS);
 
-  // Run one-time migration of legacy manualAdjustmentMinutes
   runMigrations(raw);
 
   const settings: Settings = {
@@ -127,7 +133,6 @@ function loadSettings(): Settings {
     goalMinutes: raw.goalMinutes ?? null,
   };
 
-  // Remove the legacy field from stored settings if it exists
   if ((raw as any).manualAdjustmentMinutes !== undefined) {
     writeKey(SETTINGS_KEY, settings);
   }
@@ -145,6 +150,27 @@ function loadAdjustments(): ManualAdjustment[] {
 
 function saveAdjustments(list: ManualAdjustment[]): void {
   writeKey(ADJUSTMENTS_KEY, list);
+}
+
+// ─── Work Schedule storage ─────────────────────────────────────────────────
+
+function loadSchedules(): WorkSchedule[] {
+  const stored = readKey<WorkSchedule[]>(SCHEDULES_KEY, []);
+  if (stored.length > 0) return stored;
+
+  // Auto-migrate from old Settings so existing users keep their schedule
+  const settings = loadSettings();
+  const migrated = scheduleFromSettings(
+    settings.defaultEntryTime,
+    settings.defaultExitTime,
+    settings.lunchBreakMinutes,
+  );
+  writeKey(SCHEDULES_KEY, [migrated]);
+  return [migrated];
+}
+
+function saveSchedules(list: WorkSchedule[]): void {
+  writeKey(SCHEDULES_KEY, list);
 }
 
 async function loadRecords(): Promise<TimeRecord[]> {
@@ -167,6 +193,8 @@ async function loadRecords(): Promise<TimeRecord[]> {
     if (!data) return [];
 
     const settings = loadSettings();
+    const schedules = loadSchedules();
+
     return data.map((row: DatabaseRecord) => {
       const recType = (row.type as any) ?? "WORK_DAY";
       const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
@@ -177,13 +205,8 @@ async function loadRecords(): Promise<TimeRecord[]> {
           exitTime: row.exit_time,
         },
         settings,
+        schedules,
       );
-
-      // Always use the freshly-recomputed values so that every record is evaluated
-      // against the current settings. Using stored DB values caused stale balances
-      // when settings changed after a record was created.
-      const finalWorked  = workedMinutes;
-      const finalBalance = balanceMinutes;
 
       return {
         id: row.id,
@@ -191,8 +214,8 @@ async function loadRecords(): Promise<TimeRecord[]> {
         type: recType,
         entryTime: row.entry_time,
         exitTime: row.exit_time,
-        workedMinutes: finalWorked,
-        balanceMinutes: finalBalance,
+        workedMinutes,
+        balanceMinutes,
         note: row.note ?? null,
         createdAt: row.created_at,
       };
@@ -229,6 +252,13 @@ export function useGetSettings() {
   });
 }
 
+export function useGetSchedules() {
+  return useQuery({
+    queryKey: getGetSchedulesQueryKey(),
+    queryFn: (): WorkSchedule[] => loadSchedules(),
+  });
+}
+
 export function useListRecords(params?: { month?: number; year?: number }) {
   return useQuery({
     queryKey: getListRecordsQueryKey(params),
@@ -255,7 +285,73 @@ export function useGetMissingDays() {
     queryKey: getGetMissingDaysQueryKey(),
     queryFn: async (): Promise<MissingDay[]> => {
       const [records, vacations] = await Promise.all([loadRecords(), loadVacations()]);
-      return computeMissingDays(records, vacations);
+      const schedules = loadSchedules();
+      return computeMissingDays(records, vacations, schedules);
+    },
+  });
+}
+
+/**
+ * Stats for the current month — used by the header balance widget.
+ * Returns worked vs planned minutes so the UI can display the difference
+ * without reloading all records.
+ */
+export function useGetMonthStats() {
+  return useQuery({
+    queryKey: getGetMonthStatsQueryKey(),
+    queryFn: async (): Promise<MonthStats> => {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const todayIso = now.toISOString().slice(0, 10);
+      const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
+
+      const [allRecords, allAdjustments] = await Promise.all([
+        loadRecords(),
+        Promise.resolve(loadAdjustments()),
+      ]);
+      const schedules = loadSchedules();
+
+      // Month records
+      const monthRecords = allRecords.filter((r) => r.date.startsWith(monthPrefix));
+      const monthAdjs = allAdjustments.filter((a) => a.date.startsWith(monthPrefix));
+
+      // Total accumulated balance (all time, including adjustments)
+      const totalBalanceMinutes =
+        allRecords.reduce((s, r) => s + r.balanceMinutes, 0) +
+        allAdjustments.reduce(
+          (s, a) => s + (a.type === "CREDIT" ? a.minutes : -a.minutes),
+          0,
+        );
+
+      // Worked this month
+      const workedMinutes = monthRecords.reduce((s, r) => s + r.workedMinutes, 0);
+
+      // Planned: sum of standard minutes for each workday from 1st → today
+      let plannedMinutes = 0;
+      const daysInMonth = new Date(year, month, 0).getDate();
+      for (let d = 1; d <= daysInMonth; d++) {
+        const iso = `${monthPrefix}-${String(d).padStart(2, "0")}`;
+        if (iso > todayIso) break;
+        if (!isHoliday(iso)) {
+          plannedMinutes += standardMinutesForDate(iso, schedules);
+        }
+      }
+
+      const differenceMinutes = workedMinutes - plannedMinutes;
+
+      // Month debit: sum of negative balance records + negative adjustments
+      const monthDebitMinutes =
+        monthRecords.reduce((s, r) => s + (r.balanceMinutes < 0 ? Math.abs(r.balanceMinutes) : 0), 0) +
+        monthAdjs.reduce((s, a) => s + (a.type === "DEBIT" ? a.minutes : 0), 0);
+
+      return {
+        totalBalanceMinutes,
+        workedMinutes,
+        plannedMinutes,
+        differenceMinutes,
+        monthDebitMinutes,
+      };
     },
   });
 }
@@ -367,6 +463,7 @@ export function useCreateRecord() {
       }
 
       const settings = loadSettings();
+      const schedules = loadSchedules();
       const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
         {
           date: data.date,
@@ -376,6 +473,7 @@ export function useCreateRecord() {
           note: data.note ?? null,
         },
         settings,
+        schedules,
       );
 
       const createdAt = new Date().toISOString();
@@ -447,6 +545,7 @@ export function useUpdateRecord() {
       };
 
       const settings = loadSettings();
+      const schedules = loadSchedules();
       const { workedMinutes, balanceMinutes } = computeBalanceForRecord(
         {
           date: merged.date,
@@ -456,6 +555,7 @@ export function useUpdateRecord() {
           note: merged.note,
         },
         settings,
+        schedules,
       );
       merged.workedMinutes = workedMinutes;
       merged.balanceMinutes = balanceMinutes;
@@ -563,6 +663,46 @@ export function useUpdateSettings() {
   });
 }
 
+/** Add a new WorkSchedule entry (effective from a given date). */
+export function useAddSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ data }: { data: WorkScheduleInput }): Promise<WorkSchedule> => {
+      const list = loadSchedules();
+      const newSchedule: WorkSchedule = {
+        ...data,
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      };
+      // Keep sorted by effectiveFrom asc
+      const updated = [...list, newSchedule].sort((a, b) =>
+        a.effectiveFrom.localeCompare(b.effectiveFrom),
+      );
+      saveSchedules(updated);
+      return newSchedule;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: getGetSchedulesQueryKey() });
+      invalidateAll(qc);
+    },
+  });
+}
+
+/** Delete a WorkSchedule entry by id. At least one must remain. */
+export function useDeleteSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string }): Promise<void> => {
+      const list = loadSchedules();
+      if (list.length <= 1) throw new Error("É necessário manter pelo menos uma vigência de jornada.");
+      saveSchedules(list.filter((s) => s.id !== id));
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: getGetSchedulesQueryKey() });
+      invalidateAll(qc);
+    },
+  });
+}
+
 export function useBulkGenerateMonth() {
   const qc = useQueryClient();
   return useMutation({
@@ -577,11 +717,16 @@ export function useBulkGenerateMonth() {
       const rows = await loadRecords();
       const existing = new Set(rows.map((r) => r.date));
       const settings = loadSettings();
+      const schedules = loadSchedules();
+      const vacations = await loadVacations();
+
       const { toCreate, skipped } = bulkGenerateInputs(
         data.year,
         data.month,
         existing,
         settings,
+        schedules,
+        vacations,
       );
 
       if (toCreate.length === 0) {
@@ -590,7 +735,7 @@ export function useBulkGenerateMonth() {
 
       const createdAt = new Date().toISOString();
       const recordsToInsert = toCreate.map((input) => {
-        const { workedMinutes, balanceMinutes } = computeBalanceForRecord(input, settings);
+        const { workedMinutes, balanceMinutes } = computeBalanceForRecord(input, settings, schedules);
         return {
           user_id: user.id,
           date: input.date,
@@ -719,7 +864,7 @@ export function useVacationsMigrationReady() {
         return false;
       }
     },
-    staleTime: 5 * 60 * 1000, // cache result for 5 min, no need to check on every render
+    staleTime: 5 * 60 * 1000,
     retry: false,
   });
 }
@@ -841,6 +986,7 @@ export function useDeleteAccount() {
 
       localStorage.removeItem("bh:settings");
       localStorage.removeItem("bh:adjustments");
+      localStorage.removeItem("bh:schedules");
       localStorage.removeItem("bh:no-remember");
       localStorage.removeItem(MIGRATION_V1_KEY);
       sessionStorage.removeItem("bh:session-active");

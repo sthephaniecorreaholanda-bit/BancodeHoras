@@ -1,2 +1,3 @@
 - [Auth redirects GitHub Pages](auth-redirects-gh-pages.md) — getSiteUrl() centraliza todos os redirectTo/emailRedirectTo; evitar strings hardcoded.
 - [Delete Account Edge Function](delete-account-edge-fn.md) — exclusão usa Edge Function Deno + service_role_key; CASCADE na FK user_id limpa "Horas" automaticamente.
+- [Work Schedule System (Jornada)](work-schedule-system.md) — bh:schedules localStorage; todos os cálculos usam WorkSchedule[] não Settings flat; auto-migração de Settings existentes.

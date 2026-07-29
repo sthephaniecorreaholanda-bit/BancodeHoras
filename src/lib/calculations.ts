@@ -1,4 +1,9 @@
 import { isHoliday, isSunday, isWorkday } from "./holidays";
+import {
+  getDayScheduleForDate,
+  isWorkdayBySchedule,
+  standardMinutesForDate,
+} from "./schedule";
 import type {
   ManualAdjustment,
   MissingDay,
@@ -11,6 +16,7 @@ import type {
   TimeRecord,
   TimeRecordInput,
   VacationPeriod,
+  WorkSchedule,
 } from "./types";
 
 const SHORT_MONTHS = [
@@ -41,47 +47,54 @@ export function computeWorkedMinutes(
 export function computeBalanceForRecord(
   input: TimeRecordInput,
   settings: Settings,
+  schedules: WorkSchedule[] = [],
 ): { workedMinutes: number; balanceMinutes: number } {
+  // Resolve per-day schedule overrides when available
+  const daySchedule =
+    schedules.length > 0 ? getDayScheduleForDate(input.date, schedules) : null;
+
+  const defaultEntry = daySchedule?.entryTime ?? settings.defaultEntryTime;
+  const defaultExit  = daySchedule?.exitTime  ?? settings.defaultExitTime;
+  const lunchMin     = daySchedule?.lunchBreakMinutes ?? settings.lunchBreakMinutes;
+
   if (input.type === "WORK_DAY") {
-    const effectiveEntry = input.entryTime ?? settings.defaultEntryTime;
-    const effectiveExit  = input.exitTime  ?? settings.defaultExitTime;
-    const standardNet = computeWorkedMinutes(
-      settings.defaultEntryTime,
-      settings.defaultExitTime,
-      settings.lunchBreakMinutes,
-    );
-    const worked = computeWorkedMinutes(
-      effectiveEntry,
-      effectiveExit,
-      settings.lunchBreakMinutes,
-    );
+    // Standard net for THIS specific date (respects schedule version)
+    const standardNet =
+      schedules.length > 0
+        ? standardMinutesForDate(input.date, schedules)
+        : computeWorkedMinutes(
+            settings.defaultEntryTime,
+            settings.defaultExitTime,
+            settings.lunchBreakMinutes,
+          );
+
+    const effectiveEntry = input.entryTime ?? defaultEntry;
+    const effectiveExit  = input.exitTime  ?? defaultExit;
+    const worked = computeWorkedMinutes(effectiveEntry, effectiveExit, lunchMin);
     const balance = worked - standardNet;
 
     console.debug(
       `[BH] computeBalance | data=${input.date} | tipo=WORK_DAY\n` +
-      `  entrada=${effectiveEntry} (registrada=${input.entryTime ?? "—"}) | saída=${effectiveExit} (registrada=${input.exitTime ?? "—"})\n` +
-      `  intervalo=${settings.lunchBreakMinutes}min\n` +
-      `  jornada_esperada: ${settings.defaultEntryTime}–${settings.defaultExitTime} → standardNet=${standardNet}min (${(standardNet/60).toFixed(2)}h)\n` +
-      `  trabalhado: ${effectiveEntry}–${effectiveExit} - ${settings.lunchBreakMinutes}min_almoço = ${worked}min (${(worked/60).toFixed(2)}h)\n` +
-      `  fórmula: worked(${worked}) - standardNet(${standardNet}) = saldo=${balance}min (${(balance/60).toFixed(2)}h)`,
+      `  entrada=${effectiveEntry} | saída=${effectiveExit}\n` +
+      `  intervalo=${lunchMin}min\n` +
+      `  standardNet=${standardNet}min | trabalhado=${worked}min | saldo=${balance}min`,
     );
 
     return { workedMinutes: worked, balanceMinutes: balance };
   }
 
   if (input.type === "COMPENSATED_LEAVE") {
-    const effectiveEntry = input.entryTime ?? settings.defaultEntryTime;
-    const effectiveExit  = input.exitTime  ?? settings.defaultExitTime;
+    const effectiveEntry = input.entryTime ?? defaultEntry;
+    const effectiveExit  = input.exitTime  ?? defaultExit;
     const deductedMinutes = computeWorkedMinutes(
       effectiveEntry,
       effectiveExit,
-      settings.lunchBreakMinutes,
+      lunchMin,
     );
 
     console.debug(
       `[BH] computeBalance | data=${input.date} | tipo=COMPENSATED_LEAVE\n` +
-      `  entrada=${effectiveEntry} | saída=${effectiveExit} | intervalo=${settings.lunchBreakMinutes}min\n` +
-      `  fórmula: -deducted(${deductedMinutes}) = saldo=${-deductedMinutes}min`,
+      `  saldo=${-deductedMinutes}min`,
     );
 
     return { workedMinutes: 0, balanceMinutes: -deductedMinutes };
@@ -191,6 +204,7 @@ export function computeMonthlyEvolution(
 export function computeMissingDays(
   records: TimeRecord[],
   vacations: VacationPeriod[] = [],
+  schedules: WorkSchedule[] = [],
 ): MissingDay[] {
   const recorded = new Set(records.map((r) => r.date));
   const today = new Date();
@@ -202,9 +216,13 @@ export function computeMissingDays(
     d.setDate(d.getDate() - i);
     const iso = d.toISOString().slice(0, 10);
     if (iso >= todayIso) continue;
-    if (!isWorkday(iso)) continue;
+
+    // Use schedule-aware workday check when schedules available
+    const working =
+      schedules.length > 0 ? isWorkdayBySchedule(iso, schedules) : isWorkday(iso);
+    if (!working) continue;
+
     if (recorded.has(iso)) continue;
-    // Skip days that fall within a vacation period
     if (vacations.some((v) => iso >= v.startDate && iso <= v.endDate)) continue;
     result.push({ date: iso, dayOfWeek: SHORT_DAYS[d.getDay()] });
   }
@@ -266,6 +284,8 @@ export function bulkGenerateInputs(
   month: number,
   existingDates: Set<string>,
   settings: Settings,
+  schedules: WorkSchedule[] = [],
+  vacations: VacationPeriod[] = [],
 ): { toCreate: TimeRecordInput[]; skipped: number } {
   const daysInMonth = new Date(year, month, 0).getDate();
   const toCreate: TimeRecordInput[] = [];
@@ -273,21 +293,46 @@ export function bulkGenerateInputs(
 
   for (let day = 1; day <= daysInMonth; day++) {
     const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
     if (existingDates.has(iso)) {
       skipped += 1;
       continue;
     }
-    if (isSunday(iso) || isHoliday(iso)) {
+
+    // Skip vacation days
+    if (vacations.some((v) => iso >= v.startDate && iso <= v.endDate)) {
       skipped += 1;
       continue;
     }
-    toCreate.push({
-      date: iso,
-      type: "WORK_DAY",
-      entryTime: settings.defaultEntryTime,
-      exitTime: settings.defaultExitTime,
-      note: null,
-    });
+
+    if (schedules.length > 0) {
+      // Use schedule-aware workday check
+      if (!isWorkdayBySchedule(iso, schedules)) {
+        skipped += 1;
+        continue;
+      }
+      const daySchedule = getDayScheduleForDate(iso, schedules);
+      toCreate.push({
+        date: iso,
+        type: "WORK_DAY",
+        entryTime: daySchedule?.entryTime ?? settings.defaultEntryTime,
+        exitTime: daySchedule?.exitTime ?? settings.defaultExitTime,
+        note: null,
+      });
+    } else {
+      // Legacy fallback
+      if (isSunday(iso) || isHoliday(iso)) {
+        skipped += 1;
+        continue;
+      }
+      toCreate.push({
+        date: iso,
+        type: "WORK_DAY",
+        entryTime: settings.defaultEntryTime,
+        exitTime: settings.defaultExitTime,
+        note: null,
+      });
+    }
   }
 
   return { toCreate, skipped };

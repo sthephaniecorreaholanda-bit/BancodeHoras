@@ -15,11 +15,17 @@ import {
   X,
   MailWarning,
   Palmtree,
+  CalendarDays,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase, getSiteUrl } from "@/lib/supabaseClient";
+import { useGetMonthStats } from "@/lib/api-local";
+import { formatMinutes, minutesToHHMM, getBalanceColor } from "@/lib/time";
 
 const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Painel de Resumo", shortLabel: "Painel", exact: true },
@@ -28,6 +34,7 @@ const navItems = [
   { href: "/ferias", icon: Palmtree, label: "Férias", shortLabel: "Férias", exact: false },
   { href: "/relatorios", icon: FileText, label: "Relatórios", shortLabel: "Relatórios", exact: false },
   { href: "/anual", icon: BarChart2, label: "Relatório Anual", shortLabel: "Anual", exact: false },
+  { href: "/jornada", icon: CalendarDays, label: "Jornada", shortLabel: "Jornada", exact: false },
   { href: "/personalizacao", icon: Palette, label: "Personalização", shortLabel: "Cores", exact: false },
   { href: "/configuracoes", icon: Settings, label: "Configurações", shortLabel: "Config", exact: false },
 ];
@@ -61,10 +68,7 @@ function EmailConfirmationBanner({ email }: { email: string }) {
       const { error: resendError } = await supabase.auth.resend({
         type: "signup",
         email,
-        options: {
-          // Always redirect back to the correct production URL after confirmation
-          emailRedirectTo: getSiteUrl(),
-        },
+        options: { emailRedirectTo: getSiteUrl() },
       });
       if (resendError) throw resendError;
       setResent(true);
@@ -87,9 +91,7 @@ function EmailConfirmationBanner({ email }: { email: string }) {
             ? "✓ E-mail de confirmação reenviado! Verifique sua caixa de entrada."
             : "Confirme seu e-mail para garantir acesso contínuo à sua conta."}
         </span>
-        {error && (
-          <p className="text-red-600 dark:text-red-400 font-medium">{error}</p>
-        )}
+        {error && <p className="text-red-600 dark:text-red-400 font-medium">{error}</p>}
       </div>
       {!resent && (
         <button
@@ -97,20 +99,100 @@ function EmailConfirmationBanner({ email }: { email: string }) {
           disabled={btnDisabled}
           className="flex-shrink-0 text-xs font-semibold underline underline-offset-2 hover:opacity-70 disabled:opacity-40 disabled:no-underline transition-opacity whitespace-nowrap mt-0.5"
         >
-          {sending
-            ? "Enviando…"
-            : cooldown > 0
-            ? `Reenviar (${cooldown}s)`
-            : "Reenviar e-mail"}
+          {sending ? "Enviando…" : cooldown > 0 ? `Reenviar (${cooldown}s)` : "Reenviar e-mail"}
         </button>
       )}
-      <button
-        onClick={() => setDismissed(true)}
-        className="flex-shrink-0 hover:opacity-70 transition-opacity mt-0.5"
-        aria-label="Fechar aviso"
-      >
+      <button onClick={() => setDismissed(true)} className="flex-shrink-0 hover:opacity-70 transition-opacity mt-0.5" aria-label="Fechar aviso">
         <X size={15} />
       </button>
+    </div>
+  );
+}
+
+// ─── Balance widget ────────────────────────────────────────────────────────
+
+function BalanceWidget() {
+  const { data: stats, isLoading } = useGetMonthStats();
+
+  if (isLoading || !stats) {
+    return (
+      <div className="flex items-center gap-4 px-4 py-2.5 bg-card border-b border-border">
+        <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+        <div className="hidden sm:flex gap-3">
+          <div className="h-3 w-24 bg-muted rounded animate-pulse" />
+          <div className="h-3 w-20 bg-muted rounded animate-pulse" />
+        </div>
+      </div>
+    );
+  }
+
+  const { totalBalanceMinutes, workedMinutes, plannedMinutes, differenceMinutes } = stats;
+
+  const balanceColor = getBalanceColor(totalBalanceMinutes);
+  const diffColor = getBalanceColor(differenceMinutes);
+
+  const toZero = -totalBalanceMinutes; // positive = deficit to fill
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2 bg-card border-b border-border flex-wrap">
+      {/* Left: Saldo Atual */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {totalBalanceMinutes > 0 ? (
+            <TrendingUp size={14} className="text-primary flex-shrink-0" />
+          ) : totalBalanceMinutes < 0 ? (
+            <TrendingDown size={14} className="text-destructive flex-shrink-0" />
+          ) : (
+            <Minus size={14} className="text-muted-foreground flex-shrink-0" />
+          )}
+          <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">Saldo Atual</span>
+        </div>
+        <span className={cn("text-base font-bold font-mono tabular-nums", balanceColor)}>
+          {formatMinutes(totalBalanceMinutes)}
+        </span>
+      </div>
+
+      {/* Right: Este mês */}
+      <div className="flex items-center gap-3 sm:gap-4 flex-wrap text-xs text-muted-foreground">
+        <span className="hidden sm:inline font-medium text-foreground/60">Este mês</span>
+
+        <span className="flex items-center gap-1">
+          <span className="text-primary">✔</span>
+          <span>Trab.:</span>
+          <span className="font-mono font-semibold text-foreground">
+            {minutesToHHMM(workedMinutes)}
+          </span>
+        </span>
+
+        <span className="flex items-center gap-1">
+          <span className="text-muted-foreground">✔</span>
+          <span>Prev.:</span>
+          <span className="font-mono font-semibold text-foreground">
+            {minutesToHHMM(plannedMinutes)}
+          </span>
+        </span>
+
+        <span className="flex items-center gap-1">
+          <span className={differenceMinutes >= 0 ? "text-primary" : "text-destructive"}>✔</span>
+          <span>Dif.:</span>
+          <span className={cn("font-mono font-semibold", diffColor)}>
+            {formatMinutes(differenceMinutes)}
+          </span>
+        </span>
+
+        {totalBalanceMinutes < 0 && (
+          <span className="flex items-center gap-1 text-destructive font-medium whitespace-nowrap">
+            <span>Faltam</span>
+            <span className="font-mono font-bold">{minutesToHHMM(toZero)}</span>
+            <span>p/ zerar</span>
+          </span>
+        )}
+        {totalBalanceMinutes >= 0 && (
+          <span className="text-primary font-medium whitespace-nowrap">
+            Saldo em dia ✓
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -199,11 +281,7 @@ export function Layout({
                     : "text-muted-foreground hover:text-foreground hover:bg-accent",
                 )}
               >
-                <Icon
-                  size={19}
-                  strokeWidth={active ? 2.5 : 2}
-                  className="flex-shrink-0"
-                />
+                <Icon size={19} strokeWidth={active ? 2.5 : 2} className="flex-shrink-0" />
                 <span className="leading-none">{label}</span>
               </Link>
             );
@@ -244,6 +322,8 @@ export function Layout({
         {emailUnconfirmed && user.email && (
           <EmailConfirmationBanner email={user.email} />
         )}
+        {/* Balance widget — sticky header bar */}
+        <BalanceWidget />
         <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
           {children}
         </div>

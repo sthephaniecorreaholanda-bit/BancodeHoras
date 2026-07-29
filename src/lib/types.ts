@@ -162,3 +162,44 @@ export type VacationPeriodUpdate = {
   endDate?: string;
   note?: string | null;
 };
+
+// ─── Work Schedule (Jornada) types ────────────────────────────────────────
+
+/** 0 = Sunday … 6 = Saturday (same as Date.getDay()) */
+export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+export type DaySchedule = {
+  active: boolean;           // is this a working day?
+  entryTime: string;         // HH:MM
+  exitTime: string;          // HH:MM
+  lunchBreakMinutes: number;
+};
+
+/**
+ * A versioned work schedule. Multiple entries may exist, each starting on
+ * `effectiveFrom`. The one with the latest effectiveFrom ≤ a given date is
+ * used for calculations on that date.
+ */
+export type WorkSchedule = {
+  id: string;
+  name: string;
+  effectiveFrom: string; // YYYY-MM-DD
+  days: Record<number, DaySchedule>; // keys 0-6
+};
+
+export type WorkScheduleInput = Omit<WorkSchedule, "id">;
+
+// ─── Month stats (for the header balance widget) ──────────────────────────
+
+export type MonthStats = {
+  /** Total accumulated balance (all time) */
+  totalBalanceMinutes: number;
+  /** Minutes worked so far in the current month */
+  workedMinutes: number;
+  /** Expected minutes from month start → today (based on schedule) */
+  plannedMinutes: number;
+  /** worked − planned */
+  differenceMinutes: number;
+  /** Absolute debit accumulated in current month */
+  monthDebitMinutes: number;
+};
