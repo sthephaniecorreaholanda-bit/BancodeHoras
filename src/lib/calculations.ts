@@ -112,9 +112,11 @@ export function computeSummary(
   let daysWorked = 0;
   let compensatedLeaves = 0;
   let holidays = 0;
+  let workedMinutes = 0;
 
   for (const r of records) {
     totalBalance += r.balanceMinutes;
+    workedMinutes += r.workedMinutes;
     if (r.type === "WORK_DAY") daysWorked += 1;
     else if (r.type === "COMPENSATED_LEAVE") compensatedLeaves += 1;
     else if (r.type === "HOLIDAY") holidays += 1;
@@ -132,6 +134,7 @@ export function computeSummary(
     compensatedLeaves,
     holidays,
     adjustmentMinutes,
+    workedMinutes,
   };
 }
 

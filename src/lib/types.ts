@@ -66,6 +66,7 @@ export type Summary = {
   compensatedLeaves: number;
   holidays: number;
   adjustmentMinutes: number;
+  workedMinutes: number;
 };
 
 export type MonthlyEvolution = {

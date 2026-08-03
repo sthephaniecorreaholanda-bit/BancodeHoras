@@ -1,5 +1,6 @@
+import { useState } from "react";
 import {
-  useGetSummary,
+  useGetMonthlySummary,
   useGetSettings,
   useListVacations,
 } from "@/lib/api-local";
@@ -18,10 +19,54 @@ import {
   Target,
   TrendingUp,
   TrendingDown,
-  SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
   Palmtree,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const MONTHS = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
+function MonthPicker({
+  month,
+  year,
+  onChange,
+}: {
+  month: number;
+  year: number;
+  onChange: (month: number, year: number) => void;
+}) {
+  function prev() {
+    if (month === 1) onChange(12, year - 1);
+    else onChange(month - 1, year);
+  }
+  function next() {
+    if (month === 12) onChange(1, year + 1);
+    else onChange(month + 1, year);
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={prev}
+        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-accent transition text-muted-foreground hover:text-foreground"
+      >
+        <ChevronLeft size={15} />
+      </button>
+      <span className="text-sm font-semibold w-36 text-center tabular-nums">
+        {MONTHS[month - 1]} {year}
+      </span>
+      <button
+        onClick={next}
+        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-accent transition text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight size={15} />
+      </button>
+    </div>
+  );
+}
 
 function SummaryCard({
   icon: Icon,
@@ -198,7 +243,11 @@ function VacationCard({ vacations }: { vacations: import("@/lib/types").Vacation
 }
 
 export default function Painel() {
-  const { data: summary, isLoading } = useGetSummary();
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+
+  const { data: summary, isLoading } = useGetMonthlySummary(month, year);
   const { data: settings } = useGetSettings();
   const { data: vacations = [] } = useListVacations();
 
@@ -209,14 +258,19 @@ export default function Painel() {
   const hasGoal =
     settings?.goalMinutes !== null && settings?.goalMinutes !== undefined;
 
-  const adjMinutes = summary?.adjustmentMinutes ?? 0;
-
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl md:text-lg font-semibold flex items-center gap-2">
-        <Clock size={20} className="text-primary flex-shrink-0" />
-        Painel de Resumo
-      </h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-2xl md:text-lg font-semibold flex items-center gap-2">
+          <Clock size={20} className="text-primary flex-shrink-0" />
+          Painel de Resumo
+        </h1>
+        <MonthPicker
+          month={month}
+          year={year}
+          onChange={(m, y) => { setMonth(m); setYear(y); }}
+        />
+      </div>
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -267,13 +321,17 @@ export default function Painel() {
           />
           <SummaryCard
             icon={Clock}
-            label="Horas Trabalhadas"
+            label={`Horas Trabalhadas — ${MONTHS[month - 1]}`}
             value={minutesToHHMM(summary?.workedMinutes ?? 0)}
           />
         </div>
       )}
 
-      <EvolutionChart />
+      <EvolutionChart
+        month={month}
+        year={year}
+        onMonthChange={(m, y) => { setMonth(m); setYear(y); }}
+      />
     </div>
   );
 }

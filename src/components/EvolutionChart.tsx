@@ -606,11 +606,33 @@ function WeeklyBarChart({ month, year }: { month: number; year: number }) {
 
 type ViewMode = "daily" | "weekly";
 
-export function EvolutionChart() {
+type EvolutionChartProps = {
+  /** Controlled month (1-12). If provided, the chart uses this instead of internal state. */
+  month?: number;
+  /** Controlled year. Required when month is provided. */
+  year?: number;
+  /** Called when the user navigates months inside the chart (controlled mode). */
+  onMonthChange?: (month: number, year: number) => void;
+};
+
+export function EvolutionChart({ month: controlledMonth, year: controlledYear, onMonthChange }: EvolutionChartProps = {}) {
   const now = new Date();
   const [viewMode, setViewMode] = useState<ViewMode>("daily");
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const [internalMonth, setInternalMonth] = useState(now.getMonth() + 1);
+  const [internalYear, setInternalYear] = useState(now.getFullYear());
+
+  const isControlled = controlledMonth !== undefined && controlledYear !== undefined;
+  const month = isControlled ? controlledMonth! : internalMonth;
+  const year = isControlled ? controlledYear! : internalYear;
+
+  function handleMonthChange(m: number, y: number) {
+    if (isControlled) {
+      onMonthChange?.(m, y);
+    } else {
+      setInternalMonth(m);
+      setInternalYear(y);
+    }
+  }
 
   const { data: evolution } = useGetMonthlyEvolution();
 
@@ -671,7 +693,7 @@ export function EvolutionChart() {
       <MonthPicker
         month={month}
         year={year}
-        onChange={(m, y) => { setMonth(m); setYear(y); }}
+        onChange={handleMonthChange}
       />
 
       {/* Chart */}

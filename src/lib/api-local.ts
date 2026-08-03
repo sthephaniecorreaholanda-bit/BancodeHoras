@@ -245,6 +245,45 @@ export function useGetSummary() {
   });
 }
 
+/**
+ * Monthly summary: daysWorked, compensatedLeaves, holidays, workedMinutes
+ * are scoped to the selected month/year. totalBalanceMinutes remains the
+ * all-time accumulated balance.
+ */
+export function useGetMonthlySummary(month: number, year: number) {
+  return useQuery({
+    queryKey: ["summary", "monthly", month, year] as const,
+    queryFn: async (): Promise<Summary> => {
+      const allRecords = await loadRecords();
+      const allAdjustments = loadAdjustments();
+
+      // All-time accumulated balance (unchanged)
+      const totalBalanceMinutes =
+        allRecords.reduce((s, r) => s + r.balanceMinutes, 0) +
+        allAdjustments.reduce(
+          (s, a) => s + (a.type === "CREDIT" ? a.minutes : -a.minutes),
+          0,
+        );
+
+      // Month-scoped metrics
+      const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+      const monthRecords = allRecords.filter((r) => r.date.startsWith(monthKey));
+      const monthAdjs = allAdjustments.filter((a) => a.date.startsWith(monthKey));
+
+      const monthSummary = computeSummary(monthRecords, monthAdjs);
+
+      return {
+        totalBalanceMinutes,
+        daysWorked: monthSummary.daysWorked,
+        compensatedLeaves: monthSummary.compensatedLeaves,
+        holidays: monthSummary.holidays,
+        adjustmentMinutes: monthSummary.adjustmentMinutes,
+        workedMinutes: monthSummary.workedMinutes,
+      };
+    },
+  });
+}
+
 export function useGetSettings() {
   return useQuery({
     queryKey: getGetSettingsQueryKey(),
