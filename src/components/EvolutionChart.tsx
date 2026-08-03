@@ -190,17 +190,7 @@ function MonthPicker({
 function DailyAreaChart({ month, year }: { month: number; year: number }) {
   const { data: records, isLoading: loadingRecords } = useListRecords({ month, year });
   const { data: allAdjustments } = useListAdjustments();
-  const { data: evolution } = useGetMonthlyEvolution();
   const { data: settings } = useGetSettings();
-
-  // Balance accumulated before this month (from monthly evolution, which already includes adjustments)
-  const startingBalance = useMemo(() => {
-    if (!evolution || evolution.length === 0) return 0;
-    const prevMonth = month === 1 ? 12 : month - 1;
-    const prevYear = month === 1 ? year - 1 : year;
-    const entry = evolution.find((e) => e.month === prevMonth && e.year === prevYear);
-    return entry?.cumulativeBalanceMinutes ?? 0;
-  }, [evolution, month, year]);
 
   const { chartData, summaryStats } = useMemo(() => {
     const monthKey = `${year}-${String(month).padStart(2, "0")}`;
@@ -228,7 +218,9 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
     const sortedDates = Array.from(allDates).sort();
     const recordByDate = new Map((records ?? []).map((r) => [r.date, r]));
 
-    let cumulative = startingBalance;
+    // Start cumulative from 0 — chart shows only this month's own evolution.
+    // Adding/editing a record in another month will never shift this chart.
+    let cumulative = 0;
     const data = sortedDates.map((date) => {
       const record = recordByDate.get(date);
       const adjs = adjByDate.get(date) ?? [];
@@ -253,7 +245,6 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
     });
 
     const lastSaldo = data[data.length - 1].saldo;
-    const periodBalance = lastSaldo - startingBalance;
 
     // Credit = sum of positive daily movements; Debit = sum of absolute negative daily movements
     let creditMinutes = 0;
@@ -267,12 +258,12 @@ function DailyAreaChart({ month, year }: { month: number; year: number }) {
     return {
       chartData: data,
       summaryStats: {
-        saldoPeriodo: periodBalance,
+        saldoPeriodo: lastSaldo,
         creditoPeriodo: creditMinutes,
         debitoPeriodo: debitMinutes,
       },
     };
-  }, [records, allAdjustments, startingBalance, month, year]);
+  }, [records, allAdjustments, month, year]);
 
   // Gradient stops for zero crossing
   const { zeroStop, allPositive, allNegative } = useMemo(() => {
@@ -636,10 +627,12 @@ export function EvolutionChart({ month: controlledMonth, year: controlledYear, o
 
   const { data: evolution } = useGetMonthlyEvolution();
 
+  // Show the month's own net balance (not cumulative) so that editing a
+  // different month's records never changes this month's displayed balance.
   const currentBalance = useMemo(() => {
     if (!evolution?.length) return null;
     const entry = evolution.find((e) => e.month === month && e.year === year);
-    return entry?.cumulativeBalanceMinutes ?? null;
+    return entry?.monthBalanceMinutes ?? null;
   }, [evolution, month, year]);
 
   const balClr = currentBalance != null ? balanceColor(currentBalance) : "hsl(var(--muted-foreground))";
@@ -657,7 +650,7 @@ export function EvolutionChart({ month: controlledMonth, year: controlledYear, o
           </p>
           {currentBalance != null && (
             <p className="text-xs mt-0.5 font-mono font-semibold" style={{ color: balClr }}>
-              Saldo atual: {formatMinutes(currentBalance)}
+              Saldo do período: {formatMinutes(currentBalance)}
             </p>
           )}
         </div>

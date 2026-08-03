@@ -327,11 +327,7 @@ export default function Painel() {
         </div>
       )}
 
-      <EvolutionChart
-        month={month}
-        year={year}
-        onMonthChange={(m, y) => { setMonth(m); setYear(y); }}
-      />
+      <EvolutionChart />
     </div>
   );
 }
