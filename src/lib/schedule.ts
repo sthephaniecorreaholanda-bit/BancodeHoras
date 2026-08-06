@@ -23,7 +23,11 @@ export const DAY_NAMES_FULL = [
 
 // ─── Lookup ────────────────────────────────────────────────────────────────
 
-/** Find the most-recent schedule whose effectiveFrom ≤ date. */
+/** Find the most-recent schedule whose effectiveFrom ≤ date.
+ *  If no schedule covers the date (all effectiveFrom values are in the future
+ *  relative to that date), fall back to the earliest schedule so that bulk
+ *  generation and balance calculations work correctly for past dates even when
+ *  the user configured their schedule recently. */
 export function getScheduleForDate(
   date: string,
   schedules: WorkSchedule[],
@@ -32,7 +36,12 @@ export function getScheduleForDate(
   const sorted = [...schedules].sort((a, b) =>
     b.effectiveFrom.localeCompare(a.effectiveFrom),
   );
-  return sorted.find((s) => s.effectiveFrom <= date) ?? null;
+  // Most-recent schedule that was effective on or before this date
+  const found = sorted.find((s) => s.effectiveFrom <= date);
+  if (found) return found;
+  // No schedule covers this date — use the earliest one as a fallback so past
+  // dates are not incorrectly treated as non-workdays.
+  return sorted[sorted.length - 1];
 }
 
 /**
