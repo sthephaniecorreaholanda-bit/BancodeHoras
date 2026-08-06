@@ -21,8 +21,21 @@ const TYPES = [
   { value: "HOLIDAY", label: "Feriado / Folga" },
 ];
 
-export function RecordForm() {
-  const [date, setDate] = useState(todayISO());
+type RecordFormProps = {
+  /** Controlled date value (YYYY-MM-DD). When provided the parent owns the state. */
+  date?: string;
+  /** Called whenever the date input changes in controlled mode. */
+  onDateChange?: (date: string) => void;
+};
+
+export function RecordForm({ date: controlledDate, onDateChange }: RecordFormProps = {}) {
+  const isControlled = controlledDate !== undefined;
+  const [internalDate, setInternalDate] = useState(todayISO());
+  const date = isControlled ? controlledDate! : internalDate;
+  function setDate(d: string) {
+    if (isControlled) onDateChange?.(d);
+    else setInternalDate(d);
+  }
   const [type, setType] = useState("WORK_DAY");
   const { data: settings } = useGetSettings();
   const { data: vacations = [] } = useListVacations();

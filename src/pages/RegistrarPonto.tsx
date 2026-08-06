@@ -9,6 +9,7 @@ import {
   getGetMissingDaysQueryKey,
 } from "@/lib/api-local";
 import { RecordForm } from "@/components/RecordForm";
+import { todayISO } from "@/lib/time";
 import {
   AlertTriangle,
   X,
@@ -18,9 +19,16 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+const MONTH_NAMES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
 export default function RegistrarPonto() {
   const { data: missingDays } = useGetMissingDays();
   const [dismissedAlert, setDismissedAlert] = useState(false);
+  // Lifted from RecordForm so "Gerar Mês" always targets the selected date's month
+  const [selectedDate, setSelectedDate] = useState(todayISO());
   const qc = useQueryClient();
   const { toast } = useToast();
   const bulkGenerate = useBulkGenerateMonth();
@@ -33,9 +41,11 @@ export default function RegistrarPonto() {
   }
 
   function handleBulkGenerate() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+    // Use the selected date's month/year so generating for July works when
+    // the form date is in July — not always the current calendar month.
+    const [yearStr, monthStr] = selectedDate.split("-");
+    const year = Number(yearStr);
+    const month = Number(monthStr);
 
     bulkGenerate.mutate(
       { data: { year, month } },
@@ -61,12 +71,8 @@ export default function RegistrarPonto() {
   }
 
   const hasMissing = !dismissedAlert && missingDays && missingDays.length > 0;
-  const now = new Date();
-  const monthNames = [
-    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-  ];
-  const currentMonthName = monthNames[now.getMonth()];
+  const [selYear, selMonthIdx] = selectedDate.split("-").map(Number);
+  const selectedMonthName = MONTH_NAMES[(selMonthIdx ?? 1) - 1];
 
   return (
     <div className="space-y-5">
@@ -109,7 +115,7 @@ export default function RegistrarPonto() {
           <p className="text-sm font-semibold">Gerar Mês Padrão</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Preenche todos os dias úteis de{" "}
-            <span className="font-medium text-foreground">{currentMonthName}</span> com a jornada padrão
+            <span className="font-medium text-foreground">{selectedMonthName}</span> com a jornada padrão
             das Configurações. Pula domingos, feriados e dias já registrados.
           </p>
         </div>
@@ -129,7 +135,7 @@ export default function RegistrarPonto() {
       </div>
 
       <div id="record-form">
-        <RecordForm />
+        <RecordForm date={selectedDate} onDateChange={setSelectedDate} />
       </div>
     </div>
   );
